@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Joranski\FilamentComments;
 
 // @package-candidate score=EXTRACTED signals=1,2,4,5 extracted=2026-05-18
-// See docs/extraction-candidates.md — host owns Comment model, migrations, policies.
 
 use Joranski\FilamentComments\Comments\Livewire\CommentPanel;
 use Livewire\Livewire;
@@ -19,13 +18,14 @@ class FilamentCommentsServiceProvider extends PackageServiceProvider
         $package
             ->name('filament-comments')
             ->hasConfigFile()
-            ->hasViews()
-            ->hasMigrations();
+            ->hasViews();
     }
 
     public function packageBooted(): void
     {
         Livewire::component('filament-comments.comment-panel', CommentPanel::class);
+
+        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
 
         if ($this->app->runningInConsole()) {
             $this->publishes([

@@ -1,1 +1,4 @@
 /auth.json
+/vendor
+.env
+tests/Browser/Screenshots
