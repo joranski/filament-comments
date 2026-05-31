@@ -48,6 +48,12 @@ Publish config (recommended):
 php artisan vendor:publish --tag=filament-comments-config
 ```
 
+Publish migrations (optional — the package auto-loads them; publish only if you prefer vendor copies in `database/migrations`):
+
+```bash
+php artisan vendor:publish --tag=filament-comments-migrations
+```
+
 Publish views (optional overrides):
 
 ```bash
@@ -62,10 +68,10 @@ Complete these steps once per application:
 
 | Step | Action |
 |------|--------|
-| 1 | Set `comment_model` and `user_model` in `config/filament-comments.php` |
-| 2 | Add collaboration columns to `comments` (see [Host model contract](#host-model-contract)) |
-| 3 | Implement `comments()` morphMany on commentable models |
-| 4 | Add recommended scopes/helpers on your Comment model |
+| 1 | Run migrations (auto-loaded from the package, or publish with `--tag=filament-comments-migrations`) |
+| 2 | Set `comment_model` and `user_model` in `config/filament-comments.php` |
+| 3 | Implement `comments()` morphMany on commentable models (or use `HasComments`) |
+| 4 | Optionally extend `Joranski\FilamentComments\Models\Comment` for app-specific behavior |
 | 5 | Register a `CommentPolicy` (Filament Shield works well) |
 | 6 | Map `commentable_urls` for `@mention` notification deep links |
 | 7 | Choose one or more [integration patterns](#ways-to-use-comments) below |
@@ -406,7 +412,31 @@ New comments inherit the panel's `group` / `topic` scope when created.
 
 ## Host model contract
 
+The package ships `Joranski\FilamentComments\Models\Comment` with migrations, factory, scopes, and rating hooks. Extend it when you need app-specific behavior:
+
+```php
+use Joranski\FilamentComments\Models\Comment as BaseComment;
+
+class Comment extends BaseComment
+{
+    // e.g. MassPrunable, custom casts, VA legacy helpers
+}
+```
+
+Or point `comment_model` directly at the package class.
+
 ### Commentable record
+
+Use `HasComments` or a morphMany:
+
+```php
+use Joranski\FilamentComments\Concerns\HasComments;
+
+class Product extends Model
+{
+    use HasComments;
+}
+```
 
 ```php
 use Illuminate\Database\Eloquent\Relations\MorphMany;
@@ -417,48 +447,17 @@ public function comments(): MorphMany
 }
 ```
 
-### Comment model — minimum columns
+### Database
 
-| Column | Type | Purpose |
-|--------|------|---------|
-| `user_id` | FK | Author |
-| `commentable_type` / `commentable_id` | morph | Parent record |
-| `comment` | text | Body (HTML from RichEditor) |
-| `group` | string, nullable | Segment threads (`delay`, `chat`, etc.) |
-| `topic` | string, nullable | Sub-thread label |
-| `state` | string, nullable | e.g. `promoted` for chat bridge |
-| `parent_id` | FK nullable | Reply threading |
-| `is_pinned` | boolean | Pin to top |
-| `edited_at` | timestamp nullable | Edit audit |
-| `mentioned_user_ids` | json nullable | `@mention` targets |
+Migrations load automatically. Greenfield installs create the full `comments` table; existing apps receive missing collaboration columns only (`parent_id`, `is_pinned`, `edited_at`, `mentioned_user_ids`).
 
-**Collaboration migration example:**
+Publish copies with:
 
-```php
-Schema::table('comments', function (Blueprint $table): void {
-    $table->foreignId('parent_id')->nullable()->constrained('comments')->nullOnDelete();
-    $table->boolean('is_pinned')->default(false);
-    $table->timestamp('edited_at')->nullable();
-    $table->json('mentioned_user_ids')->nullable();
-});
+```bash
+php artisan vendor:publish --tag=filament-comments-migrations
 ```
 
-**Recommended scopes:**
-
-```php
-public function scopeRoots($query) { return $query->whereNull('parent_id'); }
-public function scopePinnedFirst($query) { return $query->orderByDesc('is_pinned')->latest(); }
-public function scopeExcludingGroups($query, array $groups) { /* whereNotIn group */ }
-public function scopeGroup($query, string $group) { return $query->where('group', $group); }
-public function scopeTopic($query, string $topic) { return $query->where('topic', $topic); }
-public function hasReplies(): bool { return $this->replies()->exists(); }
-public function isReply(): bool { return $this->parent_id !== null; }
-
-public function replies(): HasMany
-{
-    return $this->hasMany(self::class, 'parent_id')->oldest();
-}
-```
+**Legacy column reference** (included in package migration): `old_va_id`, `parent_id`, `is_pinned`, `edited_at`, `mentioned_user_ids`, plus standard comment fields. Scopes, relationships, and rating hooks live on the package `Comment` model.
 
 ---
 
@@ -688,18 +687,16 @@ Keep **`chat`** in `excluded_groups` on the audit `CommentsWidget` so live chat 
 
 ## Testing
 
-**Host app** (Pest feature tests recommended):
-
-- Scoped queries (`group`, `topic`, `excludedGroups`)
-- Mention parsing and notifications
-- Reply depth limits, pin order, edit/delete guards
-- Inline reply composer (`startReply` → `submitReply`)
-
-**Package:**
+**Package** (authorization, threading, mentions, model, migrations):
 
 ```bash
-cd packages/filament-comments && composer test
+cd path/to/filament-comments && composer test
 ```
+
+**Host app** (Filament Livewire UI integration — CommentPanel, CommentsWidget, app-specific rating UI):
+
+- Keep Pest feature tests under `tests/Feature/Filament/CommentPanelTest.php` in the consuming app
+- See `tests/Feature/CommentPanelIntegration.md` in the package for why full UI tests run in the host
 
 ---
 

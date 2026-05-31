@@ -15,7 +15,7 @@ final class CommentModels
         $class = config('filament-comments.comment_model');
 
         if (! is_string($class) || $class === '') {
-            throw new RuntimeException('Configure filament-comments.comment_model in the host application.');
+            return \Joranski\FilamentComments\Models\Comment::class;
         }
 
         return $class;

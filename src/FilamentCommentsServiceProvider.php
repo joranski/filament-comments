@@ -19,7 +19,8 @@ class FilamentCommentsServiceProvider extends PackageServiceProvider
         $package
             ->name('filament-comments')
             ->hasConfigFile()
-            ->hasViews();
+            ->hasViews()
+            ->hasMigrations();
     }
 
     public function packageBooted(): void
@@ -27,6 +28,10 @@ class FilamentCommentsServiceProvider extends PackageServiceProvider
         Livewire::component('filament-comments.comment-panel', CommentPanel::class);
 
         if ($this->app->runningInConsole()) {
+            $this->publishes([
+                __DIR__.'/../database/migrations' => database_path('migrations/vendor/joranski/filament-comments'),
+            ], 'filament-comments-migrations');
+
             $this->publishes([
                 __DIR__.'/../stubs/CommentPolicy.php.stub' => app_path('Policies/CommentPolicy.php'),
             ], 'filament-comments-policy');

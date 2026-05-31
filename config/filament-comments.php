@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Joranski\FilamentComments\Support\CommentGroups;
 
 return [
-    'comment_model' => null,
+    'comment_model' => \Joranski\FilamentComments\Models\Comment::class,
     'user_model' => null,
 
     'features' => [
