@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Joranski\FilamentComments\Comments\Schemas;
 
-use Filament\Forms\Components\RichEditor;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Livewire;
 use Joranski\FilamentComments\Comments\Livewire\CommentPanel;
+use Joranski\FilamentComments\Support\CommentComposerField;
 use Joranski\FilamentComments\Support\CommentGroups;
 
 /**
@@ -37,17 +37,7 @@ final class CommentPanelSchema
                     ],
                 )->columnSpanFull(),
 
-                RichEditor::make('single_comment')
-                    ->hiddenLabel()
-                    ->placeholder(__('Comments'))
-                    ->toolbarButtons([
-                        ['bold', 'italic', 'underline', 'strike'],
-                        ['link', 'blockquote', 'codeBlock', 'bulletList', 'orderedList'],
-                        ['undo', 'redo'],
-                    ])
-                    ->visible(fn (string $operation): bool => $operation === 'create')
-                    ->dehydrated(false)
-                    ->columnSpanFull(),
+                CommentComposerField::createPagePlaceholder(),
             ])
             ->columnSpanFull();
     }
@@ -58,6 +48,7 @@ final class CommentPanelSchema
         ?array $excludedGroups = null,
         string $layout = 'full',
         string $heading = 'Comments',
+        ?int $threadMaxHeight = null,
     ): array {
         return [
             'layout' => $layout,
@@ -69,6 +60,7 @@ final class CommentPanelSchema
             ]),
             'heading' => $heading,
             'showHeading' => true,
+            'threadMaxHeight' => $threadMaxHeight,
         ];
     }
 }

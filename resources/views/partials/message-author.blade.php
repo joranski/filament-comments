@@ -2,8 +2,14 @@
     use Joranski\FilamentComments\Support\CommentAuthor;
 @endphp
 
-<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-    <flux:text class="font-medium text-zinc-950 dark:text-white">
+<div @class([
+    'flex flex-wrap items-center gap-x-2 gap-y-0.5',
+    'gap-y-1' => ! ($compact ?? false),
+])>
+    <flux:text @class([
+        'font-medium text-zinc-950 dark:text-white',
+        'text-sm' => $compact ?? false,
+    ])>
         {{ CommentAuthor::displayName($author) }}
     </flux:text>
 

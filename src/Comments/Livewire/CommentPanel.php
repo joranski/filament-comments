@@ -16,16 +16,22 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Collection;
+use Joranski\FilamentComments\Concerns\InteractsWithCommentMentionAutocomplete;
 use Joranski\FilamentComments\Support\CommentAuthor;
+use Joranski\FilamentComments\Support\CommentAuthorization;
+use Joranski\FilamentComments\Support\CommentComposerField;
 use Joranski\FilamentComments\Support\CommentContentRenderer;
 use Joranski\FilamentComments\Support\CommentMentionNotifier;
 use Joranski\FilamentComments\Support\CommentMentionParser;
-use Joranski\FilamentComments\Support\CommentModels;
+use Joranski\FilamentComments\Support\CommentMentionProvider;
+use Joranski\FilamentComments\Support\CommentReplyNotifier;
+use Joranski\FilamentComments\Support\CommentThreadDepth;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 
 class CommentPanel extends Component implements HasForms
 {
+    use InteractsWithCommentMentionAutocomplete;
     use InteractsWithForms;
 
     public ?Model $record = null;
@@ -38,8 +44,8 @@ class CommentPanel extends Component implements HasForms
 
     public ?string $excludeGroup = null;
 
-    /** @var list<string> */
-    public array $excludedGroups = [];
+    /** @var list<string>|null */
+    public ?array $excludedGroups = null;
 
     public string $heading = 'Comments';
 
@@ -61,12 +67,19 @@ class CommentPanel extends Component implements HasForms
 
     public string $search = '';
 
+    public ?int $threadMaxHeight = null;
+
     public ?int $replyingToCommentId = null;
 
     public ?int $editingCommentId = null;
 
     /** @var array<string, mixed> */
     public array $commentFormData = [
+        'body' => null,
+    ];
+
+    /** @var array<string, mixed> */
+    public array $replyFormData = [
         'body' => null,
     ];
 
@@ -91,16 +104,14 @@ class CommentPanel extends Component implements HasForms
         ?bool $allowMentions = null,
         ?bool $allowSearch = null,
         ?bool $allowEdit = null,
+        ?int $threadMaxHeight = null,
     ): void {
         $this->record = $record;
         $this->layout = $layout;
         $this->group = $group;
         $this->topic = $topic;
         $this->excludeGroup = $excludeGroup;
-        $this->excludedGroups = $excludedGroups ?? (array) config('filament-comments.excluded_groups', ['delay', 'chat']);
-        if ($excludeGroup !== null && ! in_array($excludeGroup, $this->excludedGroups, true)) {
-            $this->excludedGroups[] = $excludeGroup;
-        }
+        $this->excludedGroups = $this->resolveExcludedGroups($excludedGroups);
         $this->heading = $heading;
         $this->placeholder = $placeholder;
         $this->addButtonLabel = $addButtonLabel;
@@ -110,48 +121,78 @@ class CommentPanel extends Component implements HasForms
         $this->allowMentions = $allowMentions ?? (bool) config('filament-comments.features.mentions', true);
         $this->allowSearch = $allowSearch ?? (bool) config('filament-comments.features.search', true);
         $this->allowEdit = $allowEdit ?? (bool) config('filament-comments.features.edit', true);
+        $this->threadMaxHeight = $threadMaxHeight;
 
         $this->form->fill(['body' => null]);
+        $this->replyForm->fill(['body' => null]);
+    }
+
+    public function isReplyingToComment(int $commentId): bool
+    {
+        return $this->replyingToCommentId === $commentId;
+    }
+
+    public function resolvedThreadMaxHeight(): ?int
+    {
+        $height = $this->threadMaxHeight ?? config('filament-comments.thread_max_height');
+
+        if (! is_numeric($height)) {
+            return null;
+        }
+
+        $height = (int) $height;
+
+        return $height > 0 ? $height : null;
+    }
+
+    public function showCommentSearch(): bool
+    {
+        if (! $this->allowSearch || ! $this->record?->exists) {
+            return false;
+        }
+
+        return $this->comments->isNotEmpty() || filled(trim($this->search));
     }
 
     public function form(Schema $schema): Schema
     {
-        $editor = $this->usesRichEditor()
-            ? RichEditor::make('body')
-                ->hiddenLabel()
-                ->placeholder($this->composerPlaceholder())
-                ->toolbarButtons([
-                    ['bold', 'italic', 'underline', 'strike'],
-                    ['link', 'blockquote', 'codeBlock', 'bulletList', 'orderedList'],
-                    ['undo', 'redo'],
-                ])
-            : Textarea::make('body')
-                ->hiddenLabel()
-                ->placeholder($this->composerPlaceholder())
-                ->rows($this->layout === 'compact' ? 3 : 4);
+        return $this->bodyFormSchema(
+            schema: $schema,
+            statePath: 'commentFormData',
+            placeholder: $this->rootComposerPlaceholder(),
+        );
+    }
 
-        return $schema
-            ->components([$editor->columnSpanFull()])
-            ->statePath('commentFormData');
+    public function replyForm(Schema $schema): Schema
+    {
+        return $this->bodyFormSchema(
+            schema: $schema,
+            statePath: 'replyFormData',
+            placeholder: $this->replyComposerPlaceholder(),
+        );
     }
 
     public function editForm(Schema $schema): Schema
     {
-        $editor = $this->usesRichEditor()
-            ? RichEditor::make('body')
-                ->hiddenLabel()
-                ->toolbarButtons([
-                    ['bold', 'italic', 'underline', 'strike'],
-                    ['link', 'blockquote', 'codeBlock', 'bulletList', 'orderedList'],
-                    ['undo', 'redo'],
-                ])
-            : Textarea::make('body')
-                ->hiddenLabel()
-                ->rows($this->layout === 'compact' ? 3 : 4);
+        return $this->bodyFormSchema(
+            schema: $schema,
+            statePath: 'editFormData',
+        );
+    }
+
+    protected function bodyFormSchema(Schema $schema, string $statePath, ?string $placeholder = null): Schema
+    {
+        $editor = CommentComposerField::bodyField(
+            useRichEditor: $this->usesRichEditor(),
+            layout: $this->layout,
+            placeholder: $placeholder,
+        );
+
+        $editor = $this->configureMentions($editor);
 
         return $schema
             ->components([$editor->columnSpanFull()])
-            ->statePath('editFormData');
+            ->statePath($statePath);
     }
 
     #[Computed]
@@ -161,14 +202,18 @@ class CommentPanel extends Component implements HasForms
             return collect();
         }
 
+        if (! CommentAuthorization::canViewAny()) {
+            return collect();
+        }
+
         $query = $this->record->comments()
-            ->with(['user', 'replies.user'])
+            ->with($this->nestedReplyEagerLoad())
             ->roots()
             ->pinnedFirst();
 
         $this->applyScopeFilters($query);
 
-        $comments = $query->get();
+        $comments = CommentAuthorization::filterVisible($query->get());
 
         if (! filled(trim($this->search))) {
             return $comments;
@@ -181,68 +226,44 @@ class CommentPanel extends Component implements HasForms
             ->values();
     }
 
-    #[Computed]
-    public function replyingToComment(): ?Model
-    {
-        if ($this->replyingToCommentId === null || ! $this->record?->exists) {
-            return null;
-        }
-
-        return $this->record->comments()->with('user')->find($this->replyingToCommentId);
-    }
-
     public function addComment(): void
     {
-        if (! auth()->user()?->can('create', CommentModels::commentClass())) {
-            return;
-        }
-
-        if (! $this->record?->exists || ! method_exists($this->record, 'comments')) {
-            Notification::make()
-                ->title(__('Save this record before adding comments.'))
-                ->warning()
-                ->send();
-
-            return;
-        }
-
-        $body = $this->normalizeBody($this->form->getState()['body'] ?? null);
-
-        if (! $this->isValidBody($body)) {
-            Notification::make()
-                ->title(__('Comment must be at least 2 characters.'))
-                ->warning()
-                ->send();
-
-            return;
-        }
-
-        $parentId = null;
-
-        if ($this->allowReplies && $this->replyingToCommentId !== null) {
-            $parent = $this->record->comments()->roots()->find($this->replyingToCommentId);
-
-            if (! $parent instanceof Model) {
-                Notification::make()
-                    ->title(__('Unable to reply to that comment.'))
-                    ->warning()
-                    ->send();
-
-                return;
-            }
-
-            $parentId = $parent->id;
-        }
-
-        $comment = $this->record->comments()->create(
-            $this->commentAttributes(body: $body, parentId: $parentId),
+        $comment = $this->createComment(
+            rawBody: $this->form->getState()['body'] ?? null,
+            parentId: null,
         );
 
-        $this->afterCommentSaved($comment);
-        $this->resetComposer();
+        if ($comment === null) {
+            return;
+        }
+
+        $this->resetRootComposer();
 
         Notification::make()
-            ->title($parentId !== null ? __('Reply added.') : __('Comment added.'))
+            ->title(__('Comment added.'))
+            ->success()
+            ->send();
+    }
+
+    public function submitReply(): void
+    {
+        if (! $this->allowReplies || $this->replyingToCommentId === null) {
+            return;
+        }
+
+        $comment = $this->createComment(
+            rawBody: $this->replyForm->getState()['body'] ?? null,
+            parentId: $this->replyingToCommentId,
+        );
+
+        if ($comment === null) {
+            return;
+        }
+
+        $this->cancelReply();
+
+        Notification::make()
+            ->title(__('Reply added.'))
             ->success()
             ->send();
     }
@@ -253,7 +274,7 @@ class CommentPanel extends Component implements HasForms
             return;
         }
 
-        $comment = $this->record?->comments()->roots()->find($commentId);
+        $comment = $this->findScopedComment($commentId);
 
         if (! $comment instanceof Model || ! CommentAuthor::canReply($comment)) {
             return;
@@ -261,11 +282,13 @@ class CommentPanel extends Component implements HasForms
 
         $this->cancelEdit();
         $this->replyingToCommentId = $comment->id;
+        $this->replyForm->fill(['body' => null]);
     }
 
     public function cancelReply(): void
     {
         $this->replyingToCommentId = null;
+        $this->replyForm->fill(['body' => null]);
     }
 
     public function startEdit(int $commentId): void
@@ -306,10 +329,7 @@ class CommentPanel extends Component implements HasForms
         $body = $this->normalizeBody($this->editForm->getState()['body'] ?? null);
 
         if (! $this->isValidBody($body)) {
-            Notification::make()
-                ->title(__('Comment must be at least 2 characters.'))
-                ->warning()
-                ->send();
+            $this->notifyInvalidBody();
 
             return;
         }
@@ -334,7 +354,7 @@ class CommentPanel extends Component implements HasForms
             return;
         }
 
-        $comment = $this->record?->comments()->roots()->find($commentId);
+        $comment = $this->findScopedComment($commentId);
 
         if (! $comment instanceof Model || ! CommentAuthor::canPin($comment)) {
             return;
@@ -401,6 +421,22 @@ class CommentPanel extends Component implements HasForms
         return $this->layout === 'full';
     }
 
+    public function usesTextareaMentionAutocomplete(): bool
+    {
+        return $this->allowMentions && ! $this->usesRichEditor();
+    }
+
+    protected function configureMentions(RichEditor|Textarea $editor): RichEditor|Textarea
+    {
+        if (! $this->allowMentions || ! $editor instanceof RichEditor) {
+            return $editor;
+        }
+
+        return $editor->mentions([
+            CommentMentionProvider::make(),
+        ]);
+    }
+
     public function render(): View
     {
         return view('filament-comments::comment-panel');
@@ -416,11 +452,35 @@ class CommentPanel extends Component implements HasForms
             $query->where('topic', $this->topic);
         }
 
-        if ($this->excludedGroups !== []) {
-            $query->excludingGroups($this->excludedGroups);
+        $excludedGroups = $this->resolvedExcludedGroups();
+
+        if ($excludedGroups !== []) {
+            $query->excludingGroups($excludedGroups);
         } elseif ($this->excludeGroup !== null) {
             $query->excludingGroup($this->excludeGroup);
         }
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function resolvedExcludedGroups(): array
+    {
+        return $this->excludedGroups ?? $this->resolveExcludedGroups();
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function resolveExcludedGroups(?array $excludedGroups = null): array
+    {
+        $groups = $excludedGroups ?? (array) config('filament-comments.excluded_groups', ['delay', 'chat']);
+
+        if ($this->excludeGroup !== null && ! in_array($this->excludeGroup, $groups, true)) {
+            $groups[] = $this->excludeGroup;
+        }
+
+        return array_values($groups);
     }
 
     protected function normalizeBody(array|string|null $body): string
@@ -437,17 +497,22 @@ class CommentPanel extends Component implements HasForms
         return filled(strip_tags($body)) && strlen(trim(strip_tags($body))) >= 2;
     }
 
-    protected function composerPlaceholder(): string
+    protected function rootComposerPlaceholder(): string
     {
-        if ($this->replyingToCommentId !== null) {
-            return __('Write a reply…');
-        }
-
         if ($this->allowMentions) {
             return __('Comments — use @Name to mention someone');
         }
 
         return $this->placeholder;
+    }
+
+    protected function replyComposerPlaceholder(): string
+    {
+        if ($this->allowMentions) {
+            return __('Write a reply — use @Name to mention someone');
+        }
+
+        return __('Write a reply…');
     }
 
     /**
@@ -482,21 +547,101 @@ class CommentPanel extends Component implements HasForms
     {
         unset($this->comments);
 
-        if (! $this->allowMentions || ! auth()->user()) {
+        $author = auth()->user();
+
+        if (! $author) {
             return;
         }
 
-        app(CommentMentionNotifier::class)->notify(
-            comment: $comment,
-            commentable: $this->record,
-            author: auth()->user(),
-        );
+        if ($comment->parent_id && $this->record instanceof Model) {
+            $parent = $this->record->comments()->find($comment->parent_id);
+
+            if ($parent instanceof Model) {
+                app(CommentReplyNotifier::class)->notify(
+                    reply: $comment,
+                    parent: $parent,
+                    commentable: $this->record,
+                    author: $author,
+                );
+            }
+        }
+
+        if ($this->allowMentions) {
+            app(CommentMentionNotifier::class)->notify(
+                comment: $comment,
+                commentable: $this->record,
+                author: $author,
+            );
+        }
     }
 
-    protected function resetComposer(): void
+    protected function createComment(array|string|null $rawBody, ?int $parentId): ?Model
+    {
+        if (! CommentAuthorization::canCreate()) {
+            return null;
+        }
+
+        if (! $this->recordIsPersisted()) {
+            $this->notifySaveRecordFirst();
+
+            return null;
+        }
+
+        if ($parentId !== null) {
+            $parent = $this->findScopedComment($parentId);
+
+            if (! $parent instanceof Model || ! CommentAuthor::canReply($parent)) {
+                Notification::make()
+                    ->title(__('Unable to reply to that comment.'))
+                    ->warning()
+                    ->send();
+
+                return null;
+            }
+        }
+
+        $body = $this->normalizeBody($rawBody);
+
+        if (! $this->isValidBody($body)) {
+            $this->notifyInvalidBody();
+
+            return null;
+        }
+
+        $comment = $this->record->comments()->create(
+            $this->commentAttributes(body: $body, parentId: $parentId),
+        );
+
+        $this->afterCommentSaved($comment);
+
+        return $comment;
+    }
+
+    protected function recordIsPersisted(): bool
+    {
+        return $this->record?->exists === true
+            && method_exists($this->record, 'comments');
+    }
+
+    protected function notifySaveRecordFirst(): void
+    {
+        Notification::make()
+            ->title(__('Save this record before adding comments.'))
+            ->warning()
+            ->send();
+    }
+
+    protected function notifyInvalidBody(): void
+    {
+        Notification::make()
+            ->title(__('Comment must be at least 2 characters.'))
+            ->warning()
+            ->send();
+    }
+
+    protected function resetRootComposer(): void
     {
         $this->form->fill(['body' => null]);
-        $this->replyingToCommentId = null;
     }
 
     protected function findScopedComment(int $commentId): ?Model
@@ -505,11 +650,17 @@ class CommentPanel extends Component implements HasForms
             return null;
         }
 
-        $query = $this->record->comments()->with('replies');
+        $query = $this->record->comments()->with($this->nestedReplyEagerLoad());
 
         $this->applyScopeFilters($query);
 
-        return $query->find($commentId);
+        $comment = $query->find($commentId);
+
+        if (! $comment instanceof Model || ! CommentAuthorization::canView($comment)) {
+            return null;
+        }
+
+        return $comment;
     }
 
     protected function commentMatchesSearch(Model $comment, string $needle): bool
@@ -523,9 +674,27 @@ class CommentPanel extends Component implements HasForms
         }
 
         return $comment->replies->contains(
-            fn (Model $reply): bool => $this->textContains($reply->comment, $needle)
-                || $this->textContains($reply->user?->name, $needle),
+            fn (Model $reply): bool => $this->commentMatchesSearch($reply, $needle),
         );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function nestedReplyEagerLoad(?int $remainingDepth = null): array
+    {
+        $remainingDepth ??= CommentThreadDepth::maxReplyDepth();
+
+        $with = ['user'];
+
+        if ($remainingDepth > 0) {
+            $with['replies'] = function (Builder|Relation $query) use ($remainingDepth): void {
+                $this->applyScopeFilters($query);
+                $query->oldest()->with($this->nestedReplyEagerLoad($remainingDepth - 1));
+            };
+        }
+
+        return $with;
     }
 
     protected function textContains(?string $value, string $needle): bool

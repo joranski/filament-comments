@@ -1,8 +1,27 @@
 # joranski/filament-comments
 
-Audit-grade comment panels for Filament: threaded replies, pins, `@mentions` with database notifications, in-panel search, edit timestamps, and delete guards.
+Audit-grade comment panels for Filament: nested threaded replies, inline reply composers, pins, `@mentions` with database notifications, in-panel search, edit timestamps, and delete guards.
 
-Built for morphMany `comments()` on any Eloquent record — orders, customers, service tickets, products, etc.
+Built for morphMany `comments()` on any Eloquent record — orders, customers, service orders, products, etc.
+
+---
+
+## Table of contents
+
+1. [Requirements](#requirements)
+2. [Installation](#installation)
+3. [Host setup checklist](#host-setup-checklist)
+4. [Ways to use comments](#ways-to-use-comments)
+5. [Configuration reference](#configuration-reference)
+6. [Layouts & composers](#layouts--composers)
+7. [Threading & UI behavior](#threading--ui-behavior)
+8. [Groups, topics & multiple panels](#groups-topics--multiple-panels)
+9. [Authorization](#authorization)
+10. [Features in detail](#features-in-detail)
+11. [Customization](#customization)
+12. [Live chat sibling package](#live-chat-sibling-package)
+13. [Troubleshooting](#troubleshooting)
+14. [Testing](#testing)
 
 ---
 
@@ -17,21 +36,41 @@ Built for morphMany `comments()` on any Eloquent record — orders, customers, s
 
 ---
 
-## Quick start
-
-### 1. Install
+## Installation
 
 ```bash
 composer require joranski/filament-comments
 ```
 
-Publish config:
+Publish config (recommended):
 
 ```bash
 php artisan vendor:publish --tag=filament-comments-config
 ```
 
-### 2. Wire models in config
+Publish views (optional overrides):
+
+```bash
+php artisan vendor:publish --tag=filament-comments-views
+```
+
+---
+
+## Host setup checklist
+
+Complete these steps once per application:
+
+| Step | Action |
+|------|--------|
+| 1 | Set `comment_model` and `user_model` in `config/filament-comments.php` |
+| 2 | Add collaboration columns to `comments` (see [Host model contract](#host-model-contract)) |
+| 3 | Implement `comments()` morphMany on commentable models |
+| 4 | Add recommended scopes/helpers on your Comment model |
+| 5 | Register a `CommentPolicy` (Filament Shield works well) |
+| 6 | Map `commentable_urls` for `@mention` notification deep links |
+| 7 | Choose one or more [integration patterns](#ways-to-use-comments) below |
+
+**Minimal config:**
 
 ```php
 // config/filament-comments.php
@@ -41,17 +80,20 @@ use App\Models\User;
 return [
     'comment_model' => Comment::class,
     'user_model' => User::class,
-    // ...
 ];
 ```
 
-### 3. Ensure your database + model are ready
+The package throws a `RuntimeException` at runtime if model bindings are missing.
 
-See [Host model contract](#host-model-contract) below.
+---
 
-### 4. Add to a Filament edit page
+## Ways to use comments
 
-**Footer widget (most common):**
+There are **four supported integration patterns**. Pick based on where staff should interact with comments.
+
+### 1. Footer widget on edit pages (recommended default)
+
+Best for record edit screens where comments sit below the main form. Filament passes `$record` to footer widgets automatically.
 
 ```php
 // app/Filament/Resources/Orders/Pages/EditOrder.php
@@ -65,9 +107,42 @@ protected function getFooterWidgets(): array
 }
 ```
 
-Filament passes `$record` to footer widgets automatically on edit pages.
+**Customize heading, layout, or scroll height:**
 
-**Embedded in a form schema:**
+```php
+protected function getFooterWidgets(): array
+{
+    return [
+        CommentsWidget::make([
+            'heading' => 'Internal notes',
+            'layout' => 'full',           // RichEditor (default)
+            'threadMaxHeight' => 800,     // px; null = no cap
+            'excludedGroups' => ['chat', 'delay'],
+        ]),
+    ];
+}
+```
+
+**Subclass for reusable defaults:**
+
+```php
+namespace App\Filament\Widgets;
+
+use Joranski\FilamentComments\Comments\Widgets\CommentsWidget as BaseCommentsWidget;
+
+class OrderCommentsWidget extends BaseCommentsWidget
+{
+    public string $heading = 'Order notes';
+
+    public ?int $threadMaxHeight = 900;
+}
+```
+
+---
+
+### 2. Embedded in a Filament form schema
+
+Best when comments should appear inline with other form sections (e.g. Order or Customer edit forms).
 
 ```php
 use Joranski\FilamentComments\Comments\Schemas\CommentPanelSchema;
@@ -81,33 +156,257 @@ public static function configure(Schema $schema): Schema
 }
 ```
 
-### 5. Register a policy (recommended)
+**Options:**
 
-The panel checks Laravel policies on your comment model (`create`, `update`, `delete`, `deleteAny`). See [Authorization](#authorization).
+```php
+CommentPanelSchema::embeddedForm(
+    excludedGroups: ['chat'],  // null = config default
+    heading: 'Comments',
+);
+```
+
+**Create vs edit behavior:**
+
+| Page | What users see |
+|------|----------------|
+| **Edit** | Full `CommentPanel` Livewire component — load thread, add root comments, reply inline, edit, pin, search |
+| **Create** | Dehydrated RichEditor placeholder only (`single_comment`) — comments cannot persist until the parent record is saved |
+
+The create-page placeholder uses the same toolbar as the live panel so the UI feels consistent; it is **not** wired to persistence.
 
 ---
 
-## Architecture
+### 3. Standalone Livewire component
 
-```
-Host app                          Package
-─────────                         ───────
-Comment model (Eloquent)    ←──   config comment_model
-User model                  ←──   config user_model
-CommentPolicy             ←──   CommentAuthor + Gate checks
-comments() morphMany      ←──   CommentPanel queries
-Migrations                  ←──   documented schema below
+Use anywhere you have a persisted Eloquent `$record` with `comments()`:
+
+**Blade:**
+
+```blade
+<livewire:filament-comments.comment-panel
+    :record="$order"
+    layout="full"
+    heading="Comments"
+/>
 ```
 
-The package ships **UI + collaboration logic**. Your app owns persistence, permissions, and migrations.
+**Filament `Livewire::make()` (custom pages, infolists, etc.):**
+
+```php
+use Filament\Schemas\Components\Livewire;
+use Joranski\FilamentComments\Comments\Livewire\CommentPanel;
+
+Livewire::make(
+    component: CommentPanel::class,
+    data: fn (Order $record): array => [
+        'record' => $record,
+        'layout' => 'full',
+        'showHeading' => true,
+    ],
+)->columnSpanFull(),
+```
+
+**Registered alias:** `filament-comments.comment-panel`
+
+---
+
+### 4. Group- or topic-scoped panel
+
+Use a **dedicated panel** for a business segment while keeping general comments separate. Comments are filtered by `group` and/or `topic` columns.
+
+**Via widget configuration helper:**
+
+```php
+use Joranski\FilamentComments\Comments\Schemas\CommentPanelSchema;
+use Joranski\FilamentComments\Comments\Widgets\CommentsWidget;
+
+protected function getFooterWidgets(): array
+{
+    return [
+        CommentsWidget::make(
+            CommentPanelSchema::widgetConfiguration(
+                group: 'delay',
+                topic: 'shipping',
+                layout: 'compact',
+                heading: 'Delay notes',
+                threadMaxHeight: 600,
+            ),
+        ),
+    ];
+}
+```
+
+**Direct Livewire props:**
+
+```blade
+<livewire:filament-comments.comment-panel
+    :record="$serviceOrder"
+    group="delay"
+    topic="wop"
+    layout="compact"
+    heading="WOP delays"
+    :excluded-groups="[]"
+/>
+```
+
+| Prop | Effect |
+|------|--------|
+| `group` | Only comments where `group` matches |
+| `topic` | Further filter by `topic` |
+| `excludedGroups` | Hide groups (general panel uses config default to hide `delay` + `chat`) |
+| `excludeGroup` | Legacy single-group exclude; merged into excluded list |
+
+**Domain-specific panels:** Some apps build custom widgets (e.g. a delay tracker with topic toggles) that write to the same `comments` table with `group = 'delay'`. Exclude that group from the general audit panel via `excluded_groups`.
+
+---
+
+## Configuration reference
+
+Full published config shape:
+
+```php
+return [
+    // Required
+    'comment_model' => \App\Models\Comment::class,
+    'user_model' => \App\Models\User::class,
+
+    // Feature toggles (can be overridden per panel via Livewire props)
+    'features' => [
+        'replies' => true,
+        'pins' => true,
+        'mentions' => true,
+        'search' => true,
+        'edit' => true,
+        'reply_notifications' => true,
+    ],
+
+    // Hidden from the general comments panel
+    'excluded_groups' => [
+        \Joranski\FilamentComments\Support\CommentGroups::DELAY,
+        \Joranski\FilamentComments\Support\CommentGroups::CHAT,
+    ],
+
+    // @mention user search limit
+    'mention_search_limit' => 20,
+
+    // Scrollable thread max height (px); null disables cap
+    'thread_max_height' => 1000,
+
+    // Reply thread visual indent per nest level (px)
+    'reply_indent_px' => 15,
+
+    // Max reply nesting depth (root = 0)
+    'max_reply_depth' => 10,
+
+    // Authorization: auto (policy if registered, else fallback), policy, or fallback
+    'authorization' => [
+        'mode' => 'auto',
+        'fallback' => [
+            'view_any' => true,
+            'view' => true,
+            'create' => true,
+            'update_own' => true,
+            'delete_own' => true,
+            'pin' => false,
+        ],
+        'author_may_update_own' => true,
+        'author_may_delete_own' => true,
+    ],
+
+    // Filament edit URLs for @mention / reply notification "View" links
+    'commentable_urls' => [
+        \App\Models\Order::class => fn (\App\Models\Order $record): string =>
+            \App\Filament\Resources\OrderResource::getUrl('edit', ['record' => $record]),
+    ],
+];
+```
+
+### Per-panel property overrides
+
+Pass to `CommentsWidget::make([...])` or the Livewire component:
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `record` | null | Commentable Eloquent model (required for persistence) |
+| `layout` | `full` | `full` = RichEditor; `compact` = Textarea |
+| `group` | null | Scope to one group |
+| `topic` | null | Scope to one topic |
+| `excludeGroup` | null | Exclude one group (legacy) |
+| `excludedGroups` | from config | Exclude multiple groups |
+| `heading` | `Comments` | Panel title |
+| `placeholder` | `Comments` | Root composer placeholder (non-mention mode) |
+| `addButtonLabel` | `Add comment` | Root submit button |
+| `showHeading` | `true` | Show heading inside panel (widget section may also show one) |
+| `allowReplies` | from config | Nested replies + inline reply composer |
+| `allowPins` | from config | Pin/unpin root comments |
+| `allowMentions` | from config | Parse `@Name` and notify |
+| `allowSearch` | from config | In-panel text filter |
+| `allowEdit` | from config | Edit with `edited_at` audit |
+| `threadMaxHeight` | from config | Thread scroll area height (px) |
+
+---
+
+## Layouts & composers
+
+| Layout | Composer | Mentions |
+|--------|----------|----------|
+| `full` | Filament RichEditor with shared toolbar | Filament native mention dropdown (`@` trigger) |
+| `compact` | Textarea | Alpine popup autocomplete (↑/↓/Enter/Escape) |
+
+**Composer placement:**
+
+| Action | Where the editor appears |
+|--------|--------------------------|
+| New root comment | Top of panel (always) |
+| Reply | Inline RichEditor/textarea **directly under** the target comment; auto-scrolls into view |
+| Edit | Inline under the comment being edited |
+
+The top composer is **root-only**. Replies never hijack the top field.
+
+Shared toolbar (bold, lists, link, etc.) is defined once in `CommentComposerField` for consistency across root, reply, edit, and create-page placeholder.
+
+---
+
+## Threading & UI behavior
+
+- **Root comments** load with `parent_id = null`, pinned first, then newest.
+- **Replies** nest up to `max_reply_depth` (default 10).
+- Each level indents by `reply_indent_px` (default 15px) with connector lines; action buttons stay right-aligned at the thread edge.
+- **Search** filters roots client-side; a root stays visible if any nested reply matches.
+- **Delete** blocked when `hasReplies()` unless user has `deleteAny`.
+- **Pins** apply to root comments only.
+
+---
+
+## Groups, topics & multiple panels
+
+Use `CommentGroups` constants so panels stay aligned with [`joranski/filament-live-chat`](https://github.com/joranski/filament-live-chat):
+
+```php
+use Joranski\FilamentComments\Support\CommentGroups;
+
+CommentGroups::DELAY;           // 'delay'
+CommentGroups::CHAT;            // 'chat'
+CommentGroups::STATE_PROMOTED;  // 'promoted' (chat → audit bridge)
+```
+
+**Typical service-order footer (SWM pattern):**
+
+```php
+return [
+    LiveChatWidget::class,    // group = chat (ephemeral coordination)
+    CommentsWidget::class,    // audit trail; excludes chat + delay
+    DelayWidget::class,       // host-specific; group = delay, per-topic
+];
+```
+
+New comments inherit the panel's `group` / `topic` scope when created.
 
 ---
 
 ## Host model contract
 
 ### Commentable record
-
-Any model that receives comments needs a morphMany relationship:
 
 ```php
 use Illuminate\Database\Eloquent\Relations\MorphMany;
@@ -118,9 +417,7 @@ public function comments(): MorphMany
 }
 ```
 
-### Comment model
-
-Minimum columns:
+### Comment model — minimum columns
 
 | Column | Type | Purpose |
 |--------|------|---------|
@@ -128,7 +425,7 @@ Minimum columns:
 | `commentable_type` / `commentable_id` | morph | Parent record |
 | `comment` | text | Body (HTML from RichEditor) |
 | `group` | string, nullable | Segment threads (`delay`, `chat`, etc.) |
-| `topic` | string, nullable | Optional sub-thread label |
+| `topic` | string, nullable | Sub-thread label |
 | `state` | string, nullable | e.g. `promoted` for chat bridge |
 | `parent_id` | FK nullable | Reply threading |
 | `is_pinned` | boolean | Pin to top |
@@ -146,150 +443,145 @@ Schema::table('comments', function (Blueprint $table): void {
 });
 ```
 
-**Recommended scopes** (copy from a host app or implement your own):
+**Recommended scopes:**
 
 ```php
-use Joranski\FilamentComments\Support\CommentGroups;
-
-public const GROUP_DELAY = CommentGroups::DELAY;
-public const GROUP_CHAT = CommentGroups::CHAT;
-
 public function scopeRoots($query) { return $query->whereNull('parent_id'); }
 public function scopePinnedFirst($query) { return $query->orderByDesc('is_pinned')->latest(); }
-public function scopeExcludingGroups($query, array $groups) { /* ... */ }
+public function scopeExcludingGroups($query, array $groups) { /* whereNotIn group */ }
+public function scopeGroup($query, string $group) { return $query->where('group', $group); }
+public function scopeTopic($query, string $topic) { return $query->where('topic', $topic); }
 public function hasReplies(): bool { return $this->replies()->exists(); }
 public function isReply(): bool { return $this->parent_id !== null; }
-```
 
-Use `CommentGroups` constants so live chat and delay panels stay aligned with [`joranski/filament-live-chat`](https://github.com/joranski/filament-live-chat).
-
----
-
-## Configuration reference
-
-```php
-// config/filament-comments.php
-return [
-    // Required — package throws RuntimeException if missing
-    'comment_model' => \App\Models\Comment::class,
-    'user_model' => \App\Models\User::class,
-
-    // Toggle panel features globally
-    'features' => [
-        'replies' => true,
-        'pins' => true,
-        'mentions' => true,
-        'search' => true,
-        'edit' => true,
-    ],
-
-    // Groups hidden from the general comments panel
-    'excluded_groups' => [
-        \Joranski\FilamentComments\Support\CommentGroups::DELAY,
-        \Joranski\FilamentComments\Support\CommentGroups::CHAT,
-    ],
-
-    // Filament edit URLs for @mention notification deep links
-    'commentable_urls' => [
-        \App\Models\Order::class => fn (\App\Models\Order $record): string =>
-            \App\Filament\Resources\OrderResource::getUrl('edit', ['record' => $record]),
-    ],
-];
-```
-
----
-
-## Integration patterns
-
-### A. Footer widget (edit pages)
-
-```php
-protected function getFooterWidgets(): array
+public function replies(): HasMany
 {
-    return [
-        CommentsWidget::class,
-    ];
+    return $this->hasMany(self::class, 'parent_id')->oldest();
 }
 ```
-
-Customize via widget properties in a subclass, or pass config from the page:
-
-```php
-CommentsWidget::make([
-    'heading' => 'Internal notes',
-    'layout' => 'compact',
-    'excludedGroups' => ['chat', 'delay'],
-]),
-```
-
-### B. Embedded form section
-
-```php
-CommentPanelSchema::embeddedForm(
-    excludedGroups: ['chat'],
-    heading: 'Comments',
-);
-```
-
-On **create** pages, a dehydrated RichEditor placeholder is shown; users must save the record before comments persist.
-
-### C. Standalone Livewire
-
-Registered component: `filament-comments.comment-panel`
-
-```blade
-<livewire:filament-comments.comment-panel
-    :record="$order"
-    layout="full"
-    heading="Comments"
-/>
-```
-
-**Public properties:**
-
-| Property | Default | Description |
-|----------|---------|-------------|
-| `layout` | `full` | `full` or `compact` |
-| `group` | null | Show only this group |
-| `topic` | null | Filter by topic |
-| `excludedGroups` | from config | Hide groups |
-| `allowReplies` | from config | Thread replies |
-| `allowPins` | from config | Pin/unpin roots |
-| `allowMentions` | from config | Parse `@Name` |
-| `allowSearch` | from config | In-panel filter |
-| `allowEdit` | from config | Edit own comments |
-
-### D. Group- or topic-specific panel
-
-Use a dedicated panel for a business topic (e.g. delays) while keeping general comments separate:
-
-```php
-CommentPanelSchema::widgetConfiguration(
-    group: 'delay',
-    topic: 'shipping',
-    layout: 'compact',
-    heading: 'Delay notes',
-);
-```
-
-Pass that array to `CommentsWidget::make([...])` or the Livewire component.
 
 ---
 
 ## Authorization
 
-The package delegates to **your** `CommentPolicy`:
+Comment UI permissions flow through **`CommentAuthorization`**, which supports [Filament Shield](https://github.com/bezhanSalleh/filament-shield) **and** apps without Shield.
 
-| Action | Policy method | Who typically passes |
-|--------|---------------|----------------------|
-| Add / reply | `create` | Any authorized staff |
-| Edit | `update` or author match | Author or moderator |
-| Delete | `delete` + author, or `deleteAny` | Author if no replies; moderators |
-| Pin | `update` on root comments | Moderators |
+### How it works
 
-Delete is blocked when `hasReplies()` returns true — users must remove replies first.
+| `authorization.mode` | Behavior |
+|------------------------|----------|
+| **`auto`** (default) | Uses Laravel policies when a `CommentPolicy` is registered; otherwise uses fallback rules |
+| **`policy`** | Always requires policy checks (denies when no policy) |
+| **`fallback`** | Ignores policies; uses fallback rules only (useful for internal tools) |
 
-With [Filament Shield](https://github.com/bezhanSalleh/filament-shield), permissions like `Create:Comment`, `Update:Comment`, `Delete:Comment` map cleanly to the policy above.
+```php
+'authorization' => [
+    'mode' => 'auto',
+    'fallback' => [
+        'view_any' => true,      // show comments panel / thread
+        'view' => true,          // see individual comments
+        'create' => true,        // any authenticated user
+        'update_own' => true,    // author may edit own comment
+        'delete_own' => true,    // author may delete own (no replies)
+        'pin' => false,          // pinning requires policy / moderator
+    ],
+    'author_may_update_own' => true,  // when policy mode: also allow authors without Update permission
+    'author_may_delete_own' => true,  // when policy mode: Delete permission + author, or DeleteAny
+],
+```
+
+### Filament Shield permission map
+
+The Shield policy stub (`CommentPolicyShield.php.stub`) implements **every default Shield resource ability** so `shield:generate` produces a complete permission set:
+
+| Shield permission | Policy method | Used by comment panel |
+|-------------------|---------------|------------------------|
+| `ViewAny:Comment` | `viewAny` | Show thread panel, search, empty states |
+| `View:Comment` | `view` | Render each comment (roots + replies); Livewire actions require view |
+| `Create:Comment` | `create` | Add root comments and replies |
+| `Update:Comment` | `update` | Edit comments; pin/unpin roots |
+| `Delete:Comment` | `delete` | Delete own comment (no replies) when `author_may_delete_own` |
+| `DeleteAny:Comment` | `deleteAny` | Delete any comment, including threads with replies |
+| `Restore:Comment` | `restore` | Reserved (Filament Resource / soft deletes) |
+| `ForceDelete:Comment` | `forceDelete` | Reserved |
+| `ForceDeleteAny:Comment` | `forceDeleteAny` | Reserved |
+| `RestoreAny:Comment` | `restoreAny` | Reserved |
+| `Replicate:Comment` | `replicate` | Reserved |
+| `Reorder:Comment` | `reorder` | Reserved |
+
+The Livewire panel does not expose restore, replicate, or reorder — those methods exist so Shield permission generation stays aligned with a standard Filament resource. If you add soft deletes or a `CommentResource` admin UI later, the policy is already in place.
+
+### UI action matrix
+
+| UI action | Policy method(s) | Fallback (no policy) |
+|-----------|------------------|----------------------|
+| See panel / thread | `viewAny` | Authenticated users |
+| See a comment | `view` | Authenticated users |
+| Add root comment | `create` | Authenticated users |
+| Reply | `create` + depth limit | Same as create |
+| Edit | `update`, or author if `author_may_update_own` | Author only |
+| Delete | `deleteAny`, or `delete` + author if `author_may_delete_own` | Author only, no replies |
+| Pin | `update` on root | `fallback.pin` (default false) |
+
+Delete is always blocked when `hasReplies()` is true unless the user has `deleteAny`.
+
+### With Filament Shield (recommended for production)
+
+1. Publish the Shield policy stub:
+
+```bash
+php artisan vendor:publish --tag=filament-comments-policy-shield
+```
+
+2. Register a **shield-only** `CommentResource` (no navigation) so Shield generates permissions:
+
+```bash
+php artisan shield:generate --resource=CommentResource --option=policies
+```
+
+3. Assign roles (e.g. `ViewAny:Comment`, `View:Comment`, `Create:Comment`, `Update:Comment`, `Delete:Comment`, `DeleteAny:Comment`).
+
+4. Keep `authorization.mode` as **`auto`**.
+
+The generated policy checks Shield permissions (`Create:Comment`, etc.). Super-admin bypass is handled by Shield's `Gate::before` — no extra package configuration needed.
+
+**Author overrides:** By default, authors may still edit/delete their own comments even without `Update:Comment` / `Delete:Comment` when `author_may_update_own` / `author_may_delete_own` are true. Set either to `false` for strict role-only moderation.
+
+### Without Filament Shield
+
+**Option A — Rely on fallback (fastest):**
+
+Leave `authorization.mode` as `auto` and **do not register** a `CommentPolicy`. Any authenticated staff member can comment; authors edit/delete their own.
+
+**Option B — Publish standalone policy:**
+
+```bash
+php artisan vendor:publish --tag=filament-comments-policy
+```
+
+This registers explicit `create` / `update` / `delete` rules without Spatie permission strings. Customize the stub for your roles.
+
+**Option C — Force fallback:**
+
+```php
+'authorization' => ['mode' => 'fallback'],
+```
+
+Ignores any registered policy — useful for trusted internal panels only.
+
+### Policy registration
+
+Laravel must resolve your policy to the comment model:
+
+```php
+// AppServiceProvider::boot()
+Gate::guessPolicyNamesUsing(fn (string $model) => str_replace('Models', 'Policies', $model).'Policy');
+
+// Or explicit registration:
+Gate::policy(App\Models\Comment::class, App\Policies\CommentPolicy::class);
+```
+
+The package **does not** require `filament-shield` or `spatie/laravel-permission` as Composer dependencies.
 
 ---
 
@@ -297,66 +589,86 @@ With [Filament Shield](https://github.com/bezhanSalleh/filament-shield), permiss
 
 ### Threaded replies
 
-- Only **root** comments accept replies (no nested depth > 1).
-- Replies inherit `group` / `topic` from the parent thread scope.
+- Nest up to **`max_reply_depth`** (default **10**).
+- Top composer = root only; **Reply** opens inline composer under that comment.
+- **`reply_notifications`**: database notification to direct parent author (skips self-replies).
+- Replies inherit panel `group` / `topic`.
 
 ### Pins
 
-- Root comments only.
-- Pinned comments sort first, then by latest.
+Root comments only. Pinned sort first, then by latest.
 
 ### @Mentions
 
-- Type `@Full Name` matching a user’s `name` column.
-- On save, `mentioned_user_ids` is populated and Filament database notifications are sent.
-- Configure `commentable_urls` so “View” links open the correct Filament edit page.
+- **`full` layout:** Filament RichEditor mention provider; type `@` after whitespace.
+- **`compact` layout:** Textarea + Alpine popup (↑/↓/Enter/Escape).
+- On save: `mentioned_user_ids` populated; Filament DB notifications sent.
+- Configure **`commentable_urls`** for working "View" links.
 
 ### Search
 
-- Filters loaded comments client-side by plain-text body and author name.
+Client-side filter on plain-text body and author name (includes nested replies when matching).
 
-### Edit / delete guards
+### Edit / delete
 
 - Edits set `edited_at` and re-parse mentions.
-- Delete requires no replies unless the user has `deleteAny`.
+- Delete blocked when replies exist (unless `deleteAny`).
+
+### Read-only static partial
+
+For simple delete-only lists outside the full panel:
+
+```blade
+@include('filament-comments::partials.list-item-static', ['comment' => $comment])
+```
+
+Requires a Livewire parent with `deleteComment()` (e.g. custom widget).
 
 ---
 
 ## Customization
 
-### Disable features per panel
+### Disable features on one panel
 
 ```php
-@livewire('filament-comments.comment-panel', [
+CommentsWidget::make([
     'record' => $record,
     'allowPins' => false,
     'allowMentions' => false,
-])
+    'allowSearch' => false,
+]),
 ```
 
-### Publish views
+### Override views
 
-```bash
-php artisan vendor:publish --tag=filament-comments-views
-```
+Publish then edit under `resources/views/vendor/filament-comments/`:
 
-Override partials under `resources/views/vendor/filament-comments/`.
+| Partial | Purpose |
+|---------|---------|
+| `comment-panel.blade.php` | Panel shell |
+| `partials/list-item.blade.php` | Single comment row |
+| `partials/list-item-reply-form.blade.php` | Inline reply composer |
+| `partials/thread-item.blade.php` | Root + reply tree |
+| `partials/reply-nest.blade.php` | Nested reply branch |
+| `components/mention-autocomplete.blade.php` | Compact mention popup |
+
+### Programmatic helpers
+
+| Class | Purpose |
+|-------|---------|
+| `CommentComposerField` | Shared RichEditor/textarea definitions |
+| `CommentThreadDepth` | Depth limits + CSS indent helpers |
+| `CommentMentionParser` | Parse `@Name` from HTML |
+| `CommentContextResolver` | Resolve notification URLs |
+| `CommentGroups` | Shared group constants |
 
 ---
 
 ## Live chat sibling package
 
-For ephemeral coordination (polling chat, presence avatars, promote-to-comments), install [`joranski/filament-live-chat`](https://github.com/joranski/filament-live-chat). It stores chat in the same `comments` table with `group = 'chat'` and depends on this package.
+For ephemeral coordination (polling chat, presence, promote-to-comments), install [`joranski/filament-live-chat`](https://github.com/joranski/filament-live-chat). It uses the same `comments` table with `group = 'chat'` and depends on this package.
 
-Typical footer order:
-
-```php
-return [
-    LiveChatWidget::class,   // ephemeral
-    CommentsWidget::class,   // audit trail (excludes chat group)
-    // ...domain-specific panels
-];
-```
+Keep **`chat`** in `excluded_groups` on the audit `CommentsWidget` so live chat does not appear in the permanent thread.
 
 ---
 
@@ -365,22 +677,45 @@ return [
 | Symptom | Fix |
 |---------|-----|
 | `Configure filament-comments.comment_model` | Set `comment_model` and `user_model` in config |
-| Comments don’t save on create page | Expected — save the parent record first |
-| Chat/delay notes appear in general panel | Add their groups to `excluded_groups` |
+| Comments don't save on create page | Expected — save the parent record first |
+| Chat/delay notes in general panel | Add their groups to `excluded_groups` |
 | Mention notifications missing URL | Add model class to `commentable_urls` |
-| `@Name` not detected | User `name` must match exactly (case-insensitive) |
+| `@Name` not detected | User `name` must match (case-insensitive) |
+| Reply button missing | Check `max_reply_depth` or `allowReplies` |
+| Top composer still used for replies | Upgrade package — replies use inline composer |
 
 ---
 
 ## Testing
 
-Host app feature tests should cover:
+**Host app** (Pest feature tests recommended):
 
-- Scoped queries (group / excludedGroups)
+- Scoped queries (`group`, `topic`, `excludedGroups`)
 - Mention parsing and notifications
-- Reply, pin, edit, delete guard behavior
+- Reply depth limits, pin order, edit/delete guards
+- Inline reply composer (`startReply` → `submitReply`)
 
-Package smoke tests: `composer test` inside `packages/filament-comments`.
+**Package:**
+
+```bash
+cd packages/filament-comments && composer test
+```
+
+---
+
+## Architecture
+
+```
+Host app                          Package
+─────────                         ───────
+Comment model (Eloquent)    ←──   config comment_model
+User model                  ←──   config user_model
+CommentPolicy             ←──   CommentAuthor + Gate checks
+comments() morphMany      ←──   CommentPanel queries
+Migrations                  ←──   documented schema above
+```
+
+The package ships **UI + collaboration logic**. Your app owns persistence, permissions, and migrations.
 
 ---
 

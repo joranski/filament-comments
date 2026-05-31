@@ -39,51 +39,26 @@ final class CommentAuthor
 
     public static function canDelete(Model $comment): bool
     {
-        $user = auth()->user();
+        return CommentAuthorization::canDelete($comment);
+    }
 
-        if (! $user) {
-            return false;
-        }
-
-        if (method_exists($comment, 'hasReplies') && $comment->hasReplies()) {
-            return false;
-        }
-
-        return $user->can('deleteAny', $comment)
-            || ($user->can('delete', $comment) && $comment->user_id === $user->id);
+    public static function canView(Model $comment): bool
+    {
+        return CommentAuthorization::canView($comment);
     }
 
     public static function canEdit(Model $comment): bool
     {
-        $user = auth()->user();
-
-        if (! $user) {
-            return false;
-        }
-
-        return $user->can('update', $comment)
-            || $comment->user_id === $user->id;
+        return CommentAuthorization::canUpdate($comment);
     }
 
     public static function canPin(Model $comment): bool
     {
-        $user = auth()->user();
-
-        if (! $user || (method_exists($comment, 'isReply') && $comment->isReply())) {
-            return false;
-        }
-
-        return $user->can('update', $comment);
+        return CommentAuthorization::canPin($comment);
     }
 
     public static function canReply(Model $comment): bool
     {
-        $user = auth()->user();
-
-        if (! $user || (method_exists($comment, 'isReply') && $comment->isReply())) {
-            return false;
-        }
-
-        return $user->can('create', CommentModels::commentClass());
+        return CommentAuthorization::canReply($comment);
     }
 }

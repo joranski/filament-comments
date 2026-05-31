@@ -31,4 +31,6 @@ class CommentsWidget extends Widget
     public string $heading = 'Comments';
 
     public bool $showHeading = true;
+
+    public ?int $threadMaxHeight = null;
 }

@@ -25,5 +25,15 @@ class FilamentCommentsServiceProvider extends PackageServiceProvider
     public function packageBooted(): void
     {
         Livewire::component('filament-comments.comment-panel', CommentPanel::class);
+
+        if ($this->app->runningInConsole()) {
+            $this->publishes([
+                __DIR__.'/../stubs/CommentPolicy.php.stub' => app_path('Policies/CommentPolicy.php'),
+            ], 'filament-comments-policy');
+
+            $this->publishes([
+                __DIR__.'/../stubs/CommentPolicyShield.php.stub' => app_path('Policies/CommentPolicy.php'),
+            ], 'filament-comments-policy-shield');
+        }
     }
 }

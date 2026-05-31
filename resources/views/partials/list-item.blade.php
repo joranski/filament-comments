@@ -1,100 +1,149 @@
 @php
     use Joranski\FilamentComments\Support\CommentAuthor;
+    use Joranski\FilamentComments\Support\CommentThreadDepth;
 
     $author = $comment->user;
     $canDelete = CommentAuthor::canDelete($comment);
     $canEdit = $allowEdit && CommentAuthor::canEdit($comment);
     $canPin = $allowPins && ! ($isReply ?? false) && CommentAuthor::canPin($comment);
-    $canReply = $allowReplies && ! ($isReply ?? false) && CommentAuthor::canReply($comment);
+    $canReply = $allowReplies && CommentAuthor::canReply($comment);
     $isEditing = $editingCommentId === $comment->id;
+    $isReplying = $allowReplies && $this->isReplyingToComment($comment->id);
+    $isReplyItem = (bool) ($isReply ?? false);
+    $nestLevel = (int) ($nestLevel ?? 0);
+    $hasRepliesBelow = (bool) ($hasRepliesBelow ?? false);
+    $replyIndentPx = CommentThreadDepth::replyIndentPx();
+    $contentIndentCss = CommentThreadDepth::contentIndentCss($nestLevel);
 @endphp
 
 <div
     @class([
-        'flex items-start gap-3 p-4',
-        'pl-10 border-l-4 border-primary-500/30' => $isReply ?? false,
+        'fi-comment-item relative flex w-full items-start gap-2 pr-4',
+        'pl-4 pt-4 pb-4' => $nestLevel === 0 && ! $hasRepliesBelow,
+        'pl-4 pt-4 pb-2' => $nestLevel === 0 && $hasRepliesBelow,
+        'py-1.5' => $nestLevel > 0,
     ])
     wire:key="comment-{{ $comment->id }}"
 >
-    <flux:avatar
-        size="sm"
-        :name="CommentAuthor::displayName($author)"
-        class="shrink-0"
-    />
+    <div
+        @class([
+            'flex min-w-0 flex-1 items-start gap-3',
+            'relative' => $isReplyItem,
+        ])
+        @if ($contentIndentCss)
+            style="padding-left: {{ $contentIndentCss }};"
+        @endif
+    >
+        @if ($isReplyItem)
+            {{-- Branch connector from thread spine into this reply --}}
+            <div
+                class="pointer-events-none absolute top-[1.125rem] h-px bg-zinc-300/80 dark:bg-white/15"
+                style="left: -{{ $replyIndentPx }}px; width: {{ $replyIndentPx }}px;"
+                aria-hidden="true"
+            ></div>
+        @endif
 
-    <div class="min-w-0 flex-1">
-        <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-                @include('filament-comments::partials.message-author', [
-                    'author' => $author,
-                    'comment' => $comment,
-                    'showPinned' => $comment->is_pinned && ! ($isReply ?? false),
-                    'showEdited' => (bool) $comment->edited_at,
-                ])
-            </div>
+        <flux:avatar
+            :size="$isReplyItem ? 'xs' : 'sm'"
+            :name="CommentAuthor::displayName($author)"
+            @class([
+                'shrink-0',
+                'ring-2 ring-white dark:ring-zinc-900' => $isReplyItem,
+            ])
+        />
 
-            <div class="flex shrink-0 items-center gap-1">
-                @if ($canPin)
-                    <flux:button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        :icon="$comment->is_pinned ? 'bookmark-slash' : 'bookmark'"
-                        wire:click="togglePin({{ $comment->id }})"
-                        wire:loading.attr="disabled"
-                        wire:target="togglePin({{ $comment->id }})"
-                        :title="$comment->is_pinned ? __('Unpin') : __('Pin')"
-                    />
+        <div class="min-w-0 flex-1">
+            @if ($isReplyItem && ($parentComment ?? null))
+                <flux:text size="sm" class="mb-0.5 leading-tight text-zinc-400 dark:text-zinc-500">
+                    <span class="inline-flex items-center gap-1">
+                        <flux:icon.arrow-uturn-left class="size-3.5 shrink-0" />
+                        {{ CommentAuthor::displayName($parentComment->user) }}
+                    </span>
+                </flux:text>
+            @endif
+
+            @include('filament-comments::partials.message-author', [
+                'author' => $author,
+                'comment' => $comment,
+                'showPinned' => $comment->is_pinned && ! $isReplyItem,
+                'showEdited' => (bool) $comment->edited_at,
+                'compact' => $isReplyItem,
+            ])
+
+            @if ($isEditing)
+                <div class="mt-2">
+                    @include('filament-comments::partials.list-item-edit-form')
+                </div>
+            @else
+                <div @class([
+                    'prose dark:prose-invert max-w-none text-zinc-700 dark:text-zinc-300 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
+                    'prose-sm mt-2' => $nestLevel === 0,
+                    'prose-sm mt-1 text-[0.9375rem] leading-relaxed' => $nestLevel > 0,
+                ])>
+                    {!! $this->renderCommentBody($comment) !!}
+                </div>
+
+                @if ($isReplying)
+                    @include('filament-comments::partials.list-item-reply-form', [
+                        'comment' => $comment,
+                    ])
                 @endif
-
-                @if ($canReply)
-                    <flux:button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        icon="arrow-uturn-left"
-                        wire:click="startReply({{ $comment->id }})"
-                        wire:loading.attr="disabled"
-                        wire:target="startReply({{ $comment->id }})"
-                        :title="__('Reply')"
-                    />
-                @endif
-
-                @if ($canEdit && ! $isEditing)
-                    <flux:button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        icon="pencil-square"
-                        wire:click="startEdit({{ $comment->id }})"
-                        wire:loading.attr="disabled"
-                        wire:target="startEdit({{ $comment->id }})"
-                        :title="__('Edit')"
-                    />
-                @endif
-
-                @if ($canDelete)
-                    <flux:button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        icon="trash"
-                        color="danger"
-                        wire:click="deleteComment({{ $comment->id }})"
-                        wire:confirm="{{ __('Delete this comment?') }}"
-                        wire:loading.attr="disabled"
-                        wire:target="deleteComment({{ $comment->id }})"
-                    />
-                @endif
-            </div>
+            @endif
         </div>
+    </div>
 
-        @if ($isEditing)
-            @include('filament-comments::partials.list-item-edit-form')
-        @else
-            <div class="prose prose-sm dark:prose-invert mt-2 max-w-none text-zinc-700 dark:text-zinc-300 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-                {!! $this->renderCommentBody($comment) !!}
-            </div>
+    <div class="flex shrink-0 items-center gap-0.5 self-start opacity-80 transition-opacity hover:opacity-100">
+        @if ($canPin)
+            <flux:button
+                type="button"
+                variant="ghost"
+                size="sm"
+                :icon="$comment->is_pinned ? 'bookmark-slash' : 'bookmark'"
+                wire:click="togglePin({{ $comment->id }})"
+                wire:loading.attr="disabled"
+                wire:target="togglePin({{ $comment->id }})"
+                :title="$comment->is_pinned ? __('Unpin') : __('Pin')"
+            />
+        @endif
+
+        @if ($canReply)
+            <flux:button
+                type="button"
+                variant="ghost"
+                size="sm"
+                icon="arrow-uturn-left"
+                wire:click="startReply({{ $comment->id }})"
+                wire:loading.attr="disabled"
+                wire:target="startReply({{ $comment->id }})"
+                :title="__('Reply')"
+            />
+        @endif
+
+        @if ($canEdit && ! $isEditing)
+            <flux:button
+                type="button"
+                variant="ghost"
+                size="sm"
+                icon="pencil-square"
+                wire:click="startEdit({{ $comment->id }})"
+                wire:loading.attr="disabled"
+                wire:target="startEdit({{ $comment->id }})"
+                :title="__('Edit')"
+            />
+        @endif
+
+        @if ($canDelete)
+            <flux:button
+                type="button"
+                variant="ghost"
+                size="sm"
+                icon="trash"
+                color="danger"
+                wire:click="deleteComment({{ $comment->id }})"
+                wire:confirm="{{ __('Delete this comment?') }}"
+                wire:loading.attr="disabled"
+                wire:target="deleteComment({{ $comment->id }})"
+            />
         @endif
     </div>
 </div>
