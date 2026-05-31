@@ -42,6 +42,11 @@ class User extends Authenticatable
     }
 }
 
+class ExtendedComment extends \Joranski\FilamentComments\Models\Comment
+{
+    protected $table = 'comments';
+}
+
 class TestCommentable extends Model
 {
     /** @use HasFactory<TestCommentableFactory> */
