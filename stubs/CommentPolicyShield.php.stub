@@ -1,0 +1,85 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Policies;
+
+use App\Models\Comment;
+use App\Models\User;
+use Illuminate\Foundation\Auth\User as AuthUser;
+
+/**
+ * Filament Shield Comment policy.
+ *
+ * Publish from joranski/filament-comments:
+ *   php artisan vendor:publish --tag=filament-comments-policy-shield
+ *
+ * Generate permissions via Shield (shield-only CommentResource or custom resource):
+ *   php artisan shield:generate --resource=CommentResource --option=policies
+ *
+ * Permissions (Pascal case, default Shield format):
+ *   ViewAny:Comment, View:Comment, Create:Comment, Update:Comment,
+ *   Delete:Comment, DeleteAny:Comment, …
+ */
+class CommentPolicy
+{
+    public function viewAny(AuthUser $authUser): bool
+    {
+        return $authUser->can('ViewAny:Comment');
+    }
+
+    public function view(AuthUser $authUser, Comment $comment): bool
+    {
+        return $authUser->can('View:Comment');
+    }
+
+    public function create(AuthUser $authUser): bool
+    {
+        return $authUser->can('Create:Comment');
+    }
+
+    public function update(AuthUser $authUser, Comment $comment): bool
+    {
+        return $authUser->can('Update:Comment');
+    }
+
+    public function delete(AuthUser $authUser, Comment $comment): bool
+    {
+        return $authUser->can('Delete:Comment');
+    }
+
+    public function deleteAny(AuthUser $authUser): bool
+    {
+        return $authUser->can('DeleteAny:Comment');
+    }
+
+    public function restore(AuthUser $authUser, Comment $comment): bool
+    {
+        return $authUser->can('Restore:Comment');
+    }
+
+    public function forceDelete(AuthUser $authUser, Comment $comment): bool
+    {
+        return $authUser->can('ForceDelete:Comment');
+    }
+
+    public function forceDeleteAny(AuthUser $authUser): bool
+    {
+        return $authUser->can('ForceDeleteAny:Comment');
+    }
+
+    public function restoreAny(AuthUser $authUser): bool
+    {
+        return $authUser->can('RestoreAny:Comment');
+    }
+
+    public function replicate(AuthUser $authUser, Comment $comment): bool
+    {
+        return $authUser->can('Replicate:Comment');
+    }
+
+    public function reorder(AuthUser $authUser): bool
+    {
+        return $authUser->can('Reorder:Comment');
+    }
+}
