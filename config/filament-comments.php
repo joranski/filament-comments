@@ -36,8 +36,53 @@ return [
         'directory' => 'comment-attachments',
         'visibility' => 'public',
         'max_size_kb' => null,
+        /*
+         | When null, images, PDFs, Word/Excel/PowerPoint, CSV, and plain text are accepted.
+         | Set to an empty array to allow all file types supported by Filament RichEditor.
+         */
         'accepted_file_types' => null,
         'deduplicate' => false,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Rich editor toolbar
+    |--------------------------------------------------------------------------
+    |
+    | Configure toolbar button groups for comment composers. When attachments are
+    | enabled, attachFiles is appended automatically unless already present or
+    | append_attach_files_when_enabled is false.
+    |
+    | @see https://filamentphp.com/docs/forms/rich-editor#customizing-the-toolbar-buttons
+    |
+    */
+    'rich_editor' => [
+        'toolbar_buttons' => [
+            ['bold', 'italic', 'underline', 'strike'],
+            ['link', 'blockquote', 'codeBlock', 'bulletList', 'orderedList'],
+            ['undo', 'redo'],
+        ],
+        'append_attach_files_when_enabled' => true,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Comment lifecycle hooks
+    |--------------------------------------------------------------------------
+    |
+    | Register classes implementing CommentLifecycleHook to run logic before or
+    | after comments are created, updated, or deleted. Return defer() from
+    | beforeCreate/beforeUpdate to pause and show a prompt view keyed in
+    | lifecycle.defer_prompts (host app Blade views).
+    |
+    */
+    'lifecycle' => [
+        'hooks' => [
+            // App\Support\Comments\PromptDocumentEmailHook::class,
+        ],
+        'defer_prompts' => [
+            // 'document-email' => 'filament.resources.service-orders.prompts.document-email',
+        ],
     ],
 
     'excluded_groups' => [

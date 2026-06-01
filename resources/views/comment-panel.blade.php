@@ -95,5 +95,16 @@
         </div>
     @endif
 
+    @if ($showLifecyclePrompt)
+        @php($deferPromptView = $this->lifecycleDeferPromptView())
+
+        @if (filled($deferPromptView) && view()->exists($deferPromptView))
+            @include($deferPromptView, [
+                'pendingCommentPayload' => $pendingCommentPayload,
+                'lifecyclePromptKey' => $lifecyclePromptKey,
+            ])
+        @endif
+    @endif
+
     <x-filament-actions::modals />
 </div>

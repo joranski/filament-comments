@@ -11,6 +11,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Joranski\FilamentComments\Contracts\CommentAttachmentHandler;
 use Joranski\FilamentComments\Support\CommentAttachmentContext;
+use Joranski\FilamentComments\Support\CommentAttachmentDefaults;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 final class DefaultCommentAttachmentHandler implements CommentAttachmentHandler
@@ -37,6 +38,10 @@ final class DefaultCommentAttachmentHandler implements CommentAttachmentHandler
             );
 
         $acceptedTypes = config('filament-comments.attachments.accepted_file_types');
+
+        if ($acceptedTypes === null) {
+            $acceptedTypes = CommentAttachmentDefaults::acceptedFileTypes();
+        }
 
         if (is_array($acceptedTypes) && $acceptedTypes !== []) {
             $editor->fileAttachmentsAcceptedFileTypes($acceptedTypes);

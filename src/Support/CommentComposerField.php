@@ -14,17 +14,39 @@ final class CommentComposerField
      */
     public static function toolbarButtons(?CommentAttachmentContext $context = null): array
     {
-        $buttons = [
-            ['bold', 'italic', 'underline', 'strike'],
-            ['link', 'blockquote', 'codeBlock', 'bulletList', 'orderedList'],
-            ['undo', 'redo'],
-        ];
+        $configured = config('filament-comments.rich_editor.toolbar_buttons');
 
-        if (CommentAttachments::enabled(context: $context)) {
+        $buttons = is_array($configured) && $configured !== []
+            ? $configured
+            : CommentAttachmentDefaults::toolbarButtons();
+
+        if (
+            CommentAttachments::enabled(context: $context)
+            && (bool) config('filament-comments.rich_editor.append_attach_files_when_enabled', true)
+            && ! static::toolbarIncludesAttachFiles(buttons: $buttons)
+        ) {
             $buttons[] = ['attachFiles'];
         }
 
         return $buttons;
+    }
+
+    /**
+     * @param  list<list<string>>  $buttons
+     */
+    protected static function toolbarIncludesAttachFiles(array $buttons): bool
+    {
+        foreach ($buttons as $group) {
+            if (! is_array($group)) {
+                continue;
+            }
+
+            if (in_array('attachFiles', $group, true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public static function bodyField(

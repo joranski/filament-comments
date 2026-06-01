@@ -39,6 +39,20 @@ test('default handler stores uploaded files on configured disk', function (): vo
     Storage::disk('public')->assertExists($path);
 });
 
+test('default handler applies document mime types when accepted_file_types is null', function (): void {
+    config()->set('filament-comments.attachments.accepted_file_types', null);
+
+    $handler = app(DefaultCommentAttachmentHandler::class);
+    $editor = \Filament\Forms\Components\RichEditor::make('body');
+
+    $configured = $handler->configureRichEditor($editor, new CommentAttachmentContext(composer: 'root'));
+
+    expect($configured->getFileAttachmentsAcceptedFileTypes())
+        ->toContain('application/pdf')
+        ->toContain('text/csv')
+        ->toContain('image/*');
+});
+
 /**
  * @return list<list<string>>
  */
