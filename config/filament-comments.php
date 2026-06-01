@@ -15,6 +15,29 @@ return [
         'search' => true,
         'edit' => true,
         'reply_notifications' => true,
+        'attachments' => false,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Comment attachments (RichEditor file uploads)
+    |--------------------------------------------------------------------------
+    |
+    | Enable features.attachments, then choose a handler class that implements
+    | CommentAttachmentHandler. The default handler stores files on a Laravel disk.
+    | Host apps can bind a custom handler (e.g. Spatie Media Library on the
+    | commentable model) via attachments.handler.
+    |
+    */
+    'attachments' => [
+        'enabled' => true,
+        'handler' => \Joranski\FilamentComments\Attachments\DefaultCommentAttachmentHandler::class,
+        'disk' => null,
+        'directory' => 'comment-attachments',
+        'visibility' => 'public',
+        'max_size_kb' => null,
+        'accepted_file_types' => null,
+        'deduplicate' => false,
     ],
 
     'excluded_groups' => [

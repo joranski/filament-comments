@@ -12,30 +12,40 @@ final class CommentComposerField
     /**
      * @return list<list<string>>
      */
-    public static function toolbarButtons(): array
+    public static function toolbarButtons(?CommentAttachmentContext $context = null): array
     {
-        return [
+        $buttons = [
             ['bold', 'italic', 'underline', 'strike'],
             ['link', 'blockquote', 'codeBlock', 'bulletList', 'orderedList'],
             ['undo', 'redo'],
         ];
+
+        if (CommentAttachments::enabled(context: $context)) {
+            $buttons[] = ['attachFiles'];
+        }
+
+        return $buttons;
     }
 
     public static function bodyField(
         bool $useRichEditor,
         string $layout,
         ?string $placeholder = null,
+        ?CommentAttachmentContext $context = null,
     ): RichEditor|Textarea {
         if ($useRichEditor) {
             $field = RichEditor::make('body')
                 ->hiddenLabel()
-                ->toolbarButtons(self::toolbarButtons());
+                ->toolbarButtons(self::toolbarButtons(context: $context));
 
             if ($placeholder !== null) {
                 $field->placeholder($placeholder);
             }
 
-            return $field;
+            return CommentAttachments::configureRichEditor(
+                editor: $field,
+                context: $context ?? new CommentAttachmentContext(composer: 'root'),
+            );
         }
 
         $field = Textarea::make('body')
@@ -49,14 +59,18 @@ final class CommentComposerField
         return $field;
     }
 
-    public static function createPagePlaceholder(): RichEditor
+    public static function createPagePlaceholder(?CommentAttachmentContext $context = null): RichEditor
     {
-        return RichEditor::make('single_comment')
+        $context ??= new CommentAttachmentContext(composer: 'create');
+
+        $field = RichEditor::make('single_comment')
             ->hiddenLabel()
             ->placeholder(__('Comments'))
-            ->toolbarButtons(self::toolbarButtons())
+            ->toolbarButtons(self::toolbarButtons(context: $context))
             ->visible(fn (string $operation): bool => $operation === 'create')
             ->dehydrated(false)
             ->columnSpanFull();
+
+        return CommentAttachments::configureRichEditor(editor: $field, context: $context);
     }
 }

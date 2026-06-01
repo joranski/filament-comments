@@ -17,6 +17,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Collection;
 use Joranski\FilamentComments\Concerns\InteractsWithCommentMentionAutocomplete;
+use Joranski\FilamentComments\Support\CommentAttachmentContext;
+use Joranski\FilamentComments\Support\CommentAttachments;
 use Joranski\FilamentComments\Support\CommentAuthor;
 use Joranski\FilamentComments\Support\CommentAuthorization;
 use Joranski\FilamentComments\Support\CommentComposerField;
@@ -182,10 +184,19 @@ class CommentPanel extends Component implements HasForms
 
     protected function bodyFormSchema(Schema $schema, string $statePath, ?string $placeholder = null): Schema
     {
+        $composer = match ($statePath) {
+            'replyFormData' => 'reply',
+            'editFormData' => 'edit',
+            default => 'root',
+        };
+
+        $context = $this->attachmentContext(composer: $composer);
+
         $editor = CommentComposerField::bodyField(
             useRichEditor: $this->usesRichEditor(),
             layout: $this->layout,
             placeholder: $placeholder,
+            context: $context,
         );
 
         $editor = $this->configureMentions($editor);
@@ -193,6 +204,23 @@ class CommentPanel extends Component implements HasForms
         return $schema
             ->components([$editor->columnSpanFull()])
             ->statePath($statePath);
+    }
+
+    protected function attachmentContext(string $composer): CommentAttachmentContext
+    {
+        $comment = null;
+
+        if ($composer === 'edit' && $this->editingCommentId !== null) {
+            $comment = $this->findScopedComment($this->editingCommentId);
+        }
+
+        return new CommentAttachmentContext(
+            commentable: $this->record,
+            comment: $comment instanceof Model ? $comment : null,
+            group: $this->group,
+            topic: $this->topic,
+            composer: $composer,
+        );
     }
 
     #[Computed]
@@ -338,7 +366,10 @@ class CommentPanel extends Component implements HasForms
             $this->commentAttributes(body: $body, parentId: $comment->parent_id, isEdit: true),
         );
 
-        $this->afterCommentSaved($comment->fresh());
+        $this->afterCommentSaved(
+            comment: $comment->fresh(),
+            context: $this->attachmentContext(composer: 'edit'),
+        );
         $this->cancelEdit();
         unset($this->comments);
 
@@ -390,6 +421,8 @@ class CommentPanel extends Component implements HasForms
 
             return;
         }
+
+        CommentAttachments::beforeCommentDeleted(comment: $comment);
 
         $comment->delete();
         unset($this->comments);
@@ -486,7 +519,14 @@ class CommentPanel extends Component implements HasForms
     protected function normalizeBody(array|string|null $body): string
     {
         if (is_array($body)) {
-            return trim(RichContentRenderer::make($body)->toHtml());
+            $renderer = RichContentRenderer::make($body);
+
+            $renderer = CommentAttachments::configureRichContentRenderer(
+                renderer: $renderer,
+                context: $this->attachmentContext(composer: 'root'),
+            );
+
+            return trim($renderer->toHtml());
         }
 
         return trim((string) $body);
@@ -543,9 +583,13 @@ class CommentPanel extends Component implements HasForms
         return $attributes;
     }
 
-    protected function afterCommentSaved(Model $comment): void
+    protected function afterCommentSaved(Model $comment, ?CommentAttachmentContext $context = null): void
     {
         unset($this->comments);
+
+        $context ??= $this->attachmentContext(composer: 'root');
+
+        CommentAttachments::afterCommentSaved(comment: $comment, context: $context);
 
         $author = auth()->user();
 
@@ -612,7 +656,12 @@ class CommentPanel extends Component implements HasForms
             $this->commentAttributes(body: $body, parentId: $parentId),
         );
 
-        $this->afterCommentSaved($comment);
+        $composer = $parentId === null ? 'root' : 'reply';
+
+        $this->afterCommentSaved(
+            comment: $comment,
+            context: $this->attachmentContext(composer: $composer),
+        );
 
         return $comment;
     }
