@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Joranski\FilamentComments\Comments\Livewire;
 
+use Filament\Actions\Concerns\InteractsWithActions;
+use Filament\Actions\Contracts\HasActions;
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\RichEditor\RichContentRenderer;
 use Filament\Forms\Components\Textarea;
@@ -31,8 +33,9 @@ use Joranski\FilamentComments\Support\CommentThreadDepth;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 
-class CommentPanel extends Component implements HasForms
+class CommentPanel extends Component implements HasActions, HasForms
 {
+    use InteractsWithActions;
     use InteractsWithCommentMentionAutocomplete;
     use InteractsWithForms;
 

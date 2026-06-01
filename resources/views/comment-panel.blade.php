@@ -94,4 +94,6 @@
             <flux:text size="sm">{{ __('No comments yet.') }}</flux:text>
         </div>
     @endif
+
+    <x-filament-actions::modals />
 </div>
