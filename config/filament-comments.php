@@ -42,6 +42,12 @@ return [
          */
         'accepted_file_types' => null,
         'deduplicate' => false,
+        /*
+         | Filament RichEditor attachFiles uses Livewire temporary preview URLs.
+         | When true, document extensions required for PDF/Office uploads are merged
+         | into livewire.temporary_file_upload.preview_mimes at boot.
+         */
+        'ensure_livewire_preview_mimes' => true,
     ],
 
     /*

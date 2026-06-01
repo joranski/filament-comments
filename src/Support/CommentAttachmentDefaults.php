@@ -32,6 +32,30 @@ final class CommentAttachmentDefaults
     }
 
     /**
+     * File extensions Livewire must allow for temporary preview URLs when using
+     * Filament RichEditor attachFiles (AttachFilesAction calls temporaryUrl()).
+     *
+     * @return list<string>
+     */
+    public static function previewMimes(): array
+    {
+        return [
+            'pdf',
+            'doc',
+            'docx',
+            'xls',
+            'xlsx',
+            'csv',
+            'ppt',
+            'pptx',
+            'txt',
+            'odt',
+            'ods',
+            'odp',
+        ];
+    }
+
+    /**
      * Default RichEditor toolbar button groups.
      *
      * @return list<list<string>>
@@ -43,5 +67,21 @@ final class CommentAttachmentDefaults
             ['link', 'blockquote', 'codeBlock', 'bulletList', 'orderedList'],
             ['undo', 'redo'],
         ];
+    }
+
+    public static function mergeIntoLivewirePreviewMimes(): void
+    {
+        $existing = config('livewire.temporary_file_upload.preview_mimes', []);
+
+        if (! is_array($existing)) {
+            $existing = [];
+        }
+
+        config([
+            'livewire.temporary_file_upload.preview_mimes' => array_values(array_unique([
+                ...$existing,
+                ...static::previewMimes(),
+            ])),
+        ]);
     }
 }

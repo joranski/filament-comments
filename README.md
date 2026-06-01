@@ -467,6 +467,16 @@ Set `append_attach_files_when_enabled` to `false` if you place `attachFiles` man
 
 Detection covers `<img>`, media tags, linked documents (`.pdf`, `.docx`, `.xlsx`, `.csv`, etc.), and RichEditor `contentType` metadata. Use `CommentBodyValidator::containsDocument($html)` in app code or lifecycle hooks.
 
+**Livewire preview MIME types:** Filament's `attachFiles` modal calls Livewire's `temporaryUrl()` before persisting. PDF and Office uploads require those extensions in `config/livewire.php` → `temporary_file_upload.preview_mimes`. When `features.attachments` is enabled, this package merges document extensions automatically (`attachments.ensure_livewire_preview_mimes`, default `true`). You can also add them manually:
+
+```php
+// config/livewire.php
+'preview_mimes' => [
+    // ...existing image/audio/video types...
+    'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'ppt', 'pptx', 'txt',
+],
+```
+
 ---
 
 ## Lifecycle hooks
@@ -872,6 +882,7 @@ Keep **`chat`** in `excluded_groups` on the audit `CommentsWidget` so live chat 
 | Top composer still used for replies | Upgrade package — replies use inline composer |
 | Attach button missing | Set `features.attachments` true; use `layout="full"` |
 | PDF/doc rejected on upload | Check `attachments.accepted_file_types`; null uses document defaults |
+| `FileNotPreviewableException` for PDF | Add document extensions to `livewire.temporary_file_upload.preview_mimes`, or keep `attachments.ensure_livewire_preview_mimes` true (default) |
 | Comment deferred but no modal | Register `lifecycle.defer_prompts` key matching hook `deferKey` |
 | `mountAction` not found on attach | Ensure CommentPanel uses `InteractsWithActions` (v0.2.1+) |
 
