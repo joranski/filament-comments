@@ -36,7 +36,10 @@
         </div>
 
         <div class="prose prose-sm dark:prose-invert mt-2 max-w-none text-zinc-700 dark:text-zinc-300 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-            {!! str($comment->comment ?? '')->toHtmlString() !!}
+            {!! app(\Joranski\FilamentComments\Support\CommentContentRenderer::class)->render(
+                html: (string) ($comment->comment ?? ''),
+                mentionedUserIds: $comment->mentioned_user_ids ?? null,
+            ) !!}
         </div>
     </div>
 </div>

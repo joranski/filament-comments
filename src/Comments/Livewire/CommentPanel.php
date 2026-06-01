@@ -21,6 +21,7 @@ use Illuminate\Support\Collection;
 use Joranski\FilamentComments\Concerns\InteractsWithCommentMentionAutocomplete;
 use Joranski\FilamentComments\Support\CommentAttachmentContext;
 use Joranski\FilamentComments\Support\CommentAttachments;
+use Joranski\FilamentComments\Support\CommentAttachmentHtmlTransformer;
 use Joranski\FilamentComments\Support\CommentAuthor;
 use Joranski\FilamentComments\Support\CommentBodyValidator;
 use Joranski\FilamentComments\Support\CommentAuthorization;
@@ -640,10 +641,12 @@ class CommentPanel extends Component implements HasActions, HasForms
                 context: $this->attachmentContext(composer: 'root'),
             );
 
-            return trim($renderer->toHtml());
+            return trim(CommentAttachmentHtmlTransformer::transform(
+                html: $renderer->toHtml(),
+            ));
         }
 
-        return trim((string) $body);
+        return trim(CommentAttachmentHtmlTransformer::transform(html: (string) $body));
     }
 
     protected function isValidBody(string $body): bool
