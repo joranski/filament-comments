@@ -18,10 +18,12 @@ Built for morphMany `comments()` on any Eloquent record — orders, customers, s
 8. [Groups, topics & multiple panels](#groups-topics--multiple-panels)
 9. [Authorization](#authorization)
 10. [Features in detail](#features-in-detail)
-11. [Customization](#customization)
-12. [Live chat sibling package](#live-chat-sibling-package)
-13. [Troubleshooting](#troubleshooting)
-14. [Testing](#testing)
+11. [File attachments](#file-attachments)
+12. [Lifecycle hooks](#lifecycle-hooks)
+13. [Customization](#customization)
+14. [Live chat sibling package](#live-chat-sibling-package)
+15. [Troubleshooting](#troubleshooting)
+16. [Testing](#testing)
 
 ---
 
@@ -284,6 +286,39 @@ return [
         'search' => true,
         'edit' => true,
         'reply_notifications' => true,
+        'attachments' => false,   // RichEditor file uploads (see File attachments)
+    ],
+
+    // Pluggable attachment handler + storage (see File attachments)
+    'attachments' => [
+        'enabled' => true,
+        'handler' => \Joranski\FilamentComments\Attachments\DefaultCommentAttachmentHandler::class,
+        'disk' => null,
+        'directory' => 'comment-attachments',
+        'visibility' => 'public',
+        'max_size_kb' => null,
+        'accepted_file_types' => null,  // null = images, PDF, Office, CSV, plain text
+        'deduplicate' => false,
+    ],
+
+    // RichEditor toolbar button groups (see File attachments)
+    'rich_editor' => [
+        'toolbar_buttons' => [
+            ['bold', 'italic', 'underline', 'strike'],
+            ['link', 'blockquote', 'codeBlock', 'bulletList', 'orderedList'],
+            ['undo', 'redo'],
+        ],
+        'append_attach_files_when_enabled' => true,
+    ],
+
+    // Before/after create, update, delete hooks (see Lifecycle hooks)
+    'lifecycle' => [
+        'hooks' => [
+            // App\Support\Comments\PromptDocumentEmailHook::class,
+        ],
+        'defer_prompts' => [
+            // 'document-email' => 'filament.comments.prompts.document-email',
+        ],
     ],
 
     // Hidden from the general comments panel
@@ -356,7 +391,7 @@ Pass to `CommentsWidget::make([...])` or the Livewire component:
 
 | Layout | Composer | Mentions |
 |--------|----------|----------|
-| `full` | Filament RichEditor with shared toolbar | Filament native mention dropdown (`@` trigger) |
+| `full` | Filament RichEditor with configurable toolbar | Filament native mention dropdown (`@` trigger) |
 | `compact` | Textarea | Alpine popup autocomplete (↑/↓/Enter/Escape) |
 
 **Composer placement:**
@@ -369,7 +404,156 @@ Pass to `CommentsWidget::make([...])` or the Livewire component:
 
 The top composer is **root-only**. Replies never hijack the top field.
 
-Shared toolbar (bold, lists, link, etc.) is defined once in `CommentComposerField` for consistency across root, reply, edit, and create-page placeholder.
+Shared toolbar defaults are defined in `config/filament-comments.php` under `rich_editor.toolbar_buttons`. When `features.attachments` is enabled, `attachFiles` is appended automatically unless already present. See [File attachments](#file-attachments).
+
+---
+
+## File attachments
+
+Enable RichEditor file uploads on comment composers (`full` layout only):
+
+```php
+'features' => [
+    'attachments' => true,
+],
+```
+
+### Supported file types
+
+When `attachments.accepted_file_types` is **`null`** (default), the package accepts:
+
+- Images (`image/*`)
+- PDF (`application/pdf`)
+- Word / Excel / PowerPoint (legacy and OpenXML MIME types)
+- CSV and plain text
+
+Set an explicit array to restrict types, or `[]` to allow all types Filament RichEditor supports.
+
+### Storage handlers
+
+Implement `Joranski\FilamentComments\Contracts\CommentAttachmentHandler` for custom storage (e.g. Spatie Media Library on the commentable model):
+
+```php
+'attachments' => [
+    'enabled' => true,
+    'handler' => App\Support\Comments\CommentableMediaAttachmentHandler::class,
+    'max_size_kb' => 10240,
+    'accepted_file_types' => null,
+],
+```
+
+The default handler stores files on a Laravel disk (`attachments.disk`, default filesystem disk).
+
+### RichEditor toolbar
+
+Configure toolbar button groups in config ([Filament docs](https://filamentphp.com/docs/forms/rich-editor#customizing-the-toolbar-buttons)):
+
+```php
+'rich_editor' => [
+    'toolbar_buttons' => [
+        ['bold', 'italic', 'underline', 'strike'],
+        ['link', 'blockquote', 'codeBlock', 'bulletList', 'orderedList'],
+        ['undo', 'redo'],
+    ],
+    'append_attach_files_when_enabled' => true,
+],
+```
+
+Set `append_attach_files_when_enabled` to `false` if you place `attachFiles` manually in `toolbar_buttons`.
+
+### Attachment-only comments
+
+`CommentBodyValidator` treats comments with embedded files as valid even when plain text is shorter than two characters — so staff can post a PDF or image without typing a message.
+
+Detection covers `<img>`, media tags, linked documents (`.pdf`, `.docx`, `.xlsx`, `.csv`, etc.), and RichEditor `contentType` metadata. Use `CommentBodyValidator::containsDocument($html)` in app code or lifecycle hooks.
+
+---
+
+## Lifecycle hooks
+
+Register classes implementing `CommentLifecycleHook` (or extend `AbstractCommentLifecycleHook`) to run logic **before or after** comments are created, updated, or deleted.
+
+```php
+'lifecycle' => [
+    'hooks' => [
+        App\Support\Comments\PromptDocumentEmailHook::class,
+    ],
+    'defer_prompts' => [
+        'document-email' => 'filament.comments.prompts.document-email',
+    ],
+],
+```
+
+### Hook methods
+
+| Method | When | Return |
+|--------|------|--------|
+| `beforeCreate` | After validation, before insert | `CommentLifecycleResult` |
+| `afterCreate` | After comment saved + attachment handler | void |
+| `beforeUpdate` | After validation, before update | `CommentLifecycleResult` |
+| `afterUpdate` | After update + attachment handler | void |
+| `beforeDelete` | Before delete | `CommentLifecycleResult` |
+| `afterDelete` | After delete | void |
+
+### Result types
+
+```php
+use Joranski\FilamentComments\Support\CommentLifecycleResult;
+
+// Continue normally
+return CommentLifecycleResult::proceed();
+
+// Abort without saving (silent cancel)
+return CommentLifecycleResult::abort();
+
+// Pause and show a host Blade prompt (modal)
+return CommentLifecycleResult::defer(
+    deferKey: 'document-email',
+    metadata: ['reason' => 'attachment'],
+);
+```
+
+When a hook returns `defer()`, `CommentPanel` sets `showLifecyclePrompt` and includes the view from `lifecycle.defer_prompts[$deferKey]`. Wire your modal to:
+
+- `wire:click="confirmDeferredComment({ send_document_email: true })"` — finalize with metadata passed to `afterCreate`
+- `wire:click="confirmDeferredComment({ send_document_email: false })"` — finalize without side effects
+- `wire:click="cancelDeferredComment"` — discard pending comment
+
+### Example: document email prompt
+
+```php
+use Joranski\FilamentComments\Support\AbstractCommentLifecycleHook;
+use Joranski\FilamentComments\Support\CommentBodyValidator;
+use Joranski\FilamentComments\Support\CommentLifecycleEvent;
+use Joranski\FilamentComments\Support\CommentLifecycleResult;
+
+final class PromptDocumentEmailHook extends AbstractCommentLifecycleHook
+{
+    public function beforeCreate(CommentLifecycleEvent $event): CommentLifecycleResult
+    {
+        if (! $event->commentable instanceof Order) {
+            return CommentLifecycleResult::proceed();
+        }
+
+        if (CommentBodyValidator::containsDocument($event->body)) {
+            return CommentLifecycleResult::defer(deferKey: 'document-email');
+        }
+
+        return CommentLifecycleResult::proceed();
+    }
+
+    public function afterCreate(CommentLifecycleEvent $event): void
+    {
+        if (($event->metadata['send_document_email'] ?? false) !== true) {
+            return;
+        }
+
+        // Queue mail, notify staff, etc.
+    }
+}
+```
+
+Host apps own all business logic (mailers, modals, role targeting). The package only dispatches hooks and supports the defer/confirm flow on `CommentPanel`.
 
 ---
 
@@ -655,7 +839,11 @@ Publish then edit under `resources/views/vendor/filament-comments/`:
 
 | Class | Purpose |
 |-------|---------|
-| `CommentComposerField` | Shared RichEditor/textarea definitions |
+| `CommentComposerField` | Shared RichEditor/textarea definitions + toolbar from config |
+| `CommentBodyValidator` | Min-length rules; attachment/document detection |
+| `CommentAttachments` | Feature flag + handler resolution |
+| `CommentLifecycle` | Dispatches configured lifecycle hooks |
+| `CommentAttachmentDefaults` | Default MIME types + toolbar button groups |
 | `CommentThreadDepth` | Depth limits + CSS indent helpers |
 | `CommentMentionParser` | Parse `@Name` from HTML |
 | `CommentContextResolver` | Resolve notification URLs |
@@ -682,6 +870,10 @@ Keep **`chat`** in `excluded_groups` on the audit `CommentsWidget` so live chat 
 | `@Name` not detected | User `name` must match (case-insensitive) |
 | Reply button missing | Check `max_reply_depth` or `allowReplies` |
 | Top composer still used for replies | Upgrade package — replies use inline composer |
+| Attach button missing | Set `features.attachments` true; use `layout="full"` |
+| PDF/doc rejected on upload | Check `attachments.accepted_file_types`; null uses document defaults |
+| Comment deferred but no modal | Register `lifecycle.defer_prompts` key matching hook `deferKey` |
+| `mountAction` not found on attach | Ensure CommentPanel uses `InteractsWithActions` (v0.2.1+) |
 
 ---
 

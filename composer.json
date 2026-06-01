@@ -1,7 +1,7 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
     "name": "joranski/filament-comments",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "description": "Filament Livewire comment panels with mentions, pins, replies, and audit-grade threading",
     "keywords": [
         "laravel",
