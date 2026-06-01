@@ -653,7 +653,7 @@ Publish copies with:
 php artisan vendor:publish --tag=filament-comments-migrations
 ```
 
-**Legacy column reference** (included in package migration): `old_va_id`, `parent_id`, `is_pinned`, `edited_at`, `mentioned_user_ids`, plus standard comment fields. Scopes, relationships, and rating hooks live on the package `Comment` model.
+**Collaboration columns** (included in package migration): `parent_id`, `is_pinned`, `edited_at`, `mentioned_user_ids`, plus standard comment fields. Scopes, relationships, and rating hooks live on the package `Comment` model. Application-specific legacy columns (e.g. VA `old_va_id`) belong in your app migrations and extended comment model.
 
 ---
 

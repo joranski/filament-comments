@@ -19,7 +19,6 @@ return new class extends Migration
         if (! Schema::hasTable('comments')) {
             Schema::create('comments', function (Blueprint $table): void {
                 $table->bigIncrements('id');
-                $table->unsignedBigInteger('old_va_id')->nullable()->comment('Legacy comment id from va-service-track');
                 $table->unsignedBigInteger('user_id')->nullable()->index();
                 $table->morphs('commentable');
                 $table->foreignId('parent_id')
@@ -40,7 +39,6 @@ return new class extends Migration
                 $table->integer('dislikes')->default(0);
                 $table->timestamps();
 
-                $table->index('old_va_id');
                 $table->index(['commentable_type', 'commentable_id', 'is_pinned']);
                 $table->index('parent_id');
             });

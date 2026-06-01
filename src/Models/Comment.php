@@ -20,7 +20,6 @@ use Joranski\FilamentComments\Support\CommentModels;
 
 /**
  * @property int $id
- * @property int|null $old_va_id
  * @property int|null $user_id
  * @property string $commentable_type
  * @property int $commentable_id
@@ -56,7 +55,6 @@ class Comment extends Model
     public const STATE_PROMOTED = CommentGroups::STATE_PROMOTED;
 
     protected $fillable = [
-        'old_va_id',
         'user_id',
         'commentable_type',
         'commentable_id',
