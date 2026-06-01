@@ -21,7 +21,7 @@ use Illuminate\Support\Collection;
 use Joranski\FilamentComments\Concerns\InteractsWithCommentMentionAutocomplete;
 use Joranski\FilamentComments\Support\CommentAttachmentContext;
 use Joranski\FilamentComments\Support\CommentAttachments;
-use Joranski\FilamentComments\Support\CommentAuthor;
+use Joranski\FilamentComments\Support\CommentBodyValidator;
 use Joranski\FilamentComments\Support\CommentAuthorization;
 use Joranski\FilamentComments\Support\CommentComposerField;
 use Joranski\FilamentComments\Support\CommentContentRenderer;
@@ -537,7 +537,7 @@ class CommentPanel extends Component implements HasActions, HasForms
 
     protected function isValidBody(string $body): bool
     {
-        return filled(strip_tags($body)) && strlen(trim(strip_tags($body))) >= 2;
+        return CommentBodyValidator::isValid($body);
     }
 
     protected function rootComposerPlaceholder(): string
