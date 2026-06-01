@@ -99,10 +99,12 @@
         @php($deferPromptView = $this->lifecycleDeferPromptView())
 
         @if (filled($deferPromptView) && view()->exists($deferPromptView))
-            @include($deferPromptView, [
-                'pendingCommentPayload' => $pendingCommentPayload,
-                'lifecyclePromptKey' => $lifecyclePromptKey,
-            ])
+            @teleport('body')
+                @include($deferPromptView, [
+                    'pendingCommentPayload' => $pendingCommentPayload,
+                    'lifecyclePromptKey' => $lifecyclePromptKey,
+                ])
+            @endteleport
         @endif
     @endif
 

@@ -525,7 +525,7 @@ return CommentLifecycleResult::defer(
 );
 ```
 
-When a hook returns `defer()`, `CommentPanel` sets `showLifecyclePrompt` and includes the view from `lifecycle.defer_prompts[$deferKey]`. Wire your modal to:
+When a hook returns `defer()`, `CommentPanel` sets `showLifecyclePrompt` and includes the view from `lifecycle.defer_prompts[$deferKey]`. The panel **teleports defer prompt views to `body`** so they stack above sibling widgets (e.g. footer panels). Use Filament modal classes (`fi-modal`, `fi-modal-close-overlay`, `fi-modal-window-ctn`) in your prompt Blade. Wire your modal to:
 
 - `wire:click="confirmDeferredComment({ send_document_email: true })"` — finalize with metadata passed to `afterCreate`
 - `wire:click="confirmDeferredComment({ send_document_email: false })"` — finalize without side effects
