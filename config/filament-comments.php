@@ -98,6 +98,12 @@ return [
 
     'mention_search_limit' => 20,
 
+    /*
+    | Optional Eloquent local scope on the user model for @mention search, labels,
+    | and parsing (e.g. `employee` calls scopeEmployee() on the user model).
+    */
+    'mention_user_scope' => env('FILAMENT_COMMENTS_MENTION_USER_SCOPE'),
+
     // Max height (px) for the scrollable comments thread. Set to null to disable.
     'thread_max_height' => 1000,
 

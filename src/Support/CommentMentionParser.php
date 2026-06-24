@@ -22,7 +22,7 @@ final class CommentMentionParser
             return collect();
         }
 
-        return CommentModels::userQuery()
+        return CommentModels::mentionableUserQuery()
             ->whereIn('id', $ids)
             ->get();
     }
@@ -37,7 +37,24 @@ final class CommentMentionParser
             $this->parsePlainTextMentionIds($body),
         );
 
-        return array_values(array_unique(array_map(intval(...), $ids)));
+        return array_values(array_unique(array_map(intval(...), $this->filterMentionableUserIds($ids))));
+    }
+
+    /**
+     * @param  list<int>  $ids
+     * @return list<int>
+     */
+    protected function filterMentionableUserIds(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+
+        return CommentModels::mentionableUserQuery()
+            ->whereIn('id', $ids)
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
     }
 
     /**
@@ -85,7 +102,7 @@ final class CommentMentionParser
             return [];
         }
 
-        $users = CommentModels::userQuery()
+        $users = CommentModels::mentionableUserQuery()
             ->whereNotNull('name')
             ->where('name', '!=', '')
             ->get(['id', 'name'])

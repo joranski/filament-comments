@@ -6,6 +6,7 @@ namespace Joranski\FilamentComments\Support;
 
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Textarea;
+use Joranski\FilamentComments\Forms\Components\CommentRichEditor;
 
 final class CommentComposerField
 {
@@ -57,7 +58,7 @@ final class CommentComposerField
         ?bool $compactProfile = null,
     ): RichEditor|Textarea {
         if ($useRichEditor) {
-            $field = RichEditor::make('body')
+            $field = CommentRichEditor::make('body')
                 ->hiddenLabel()
                 ->toolbarButtons(self::toolbarButtons(context: $context));
 

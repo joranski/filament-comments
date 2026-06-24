@@ -31,6 +31,14 @@
     </style>
 @endif
 
+@if ($this->allowMentions && $this->usesRichEditor())
+    <style>
+        body > .fi-dropdown-panel.fi-dropdown-list {
+            z-index: 200 !important;
+        }
+    </style>
+@endif
+
 @if (CommentUi::isCondensed($uiContext))
     <style>
         .fi-comments-ui-condensed.fi-comments-panel {

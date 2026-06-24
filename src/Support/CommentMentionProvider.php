@@ -11,6 +11,7 @@ final class CommentMentionProvider
     public static function make(): MentionProvider
     {
         return MentionProvider::make('@')
+            ->items(fn (): array => self::search(search: ''))
             ->getSearchResultsUsing(fn (string $search): array => self::search(search: $search))
             ->getLabelsUsing(fn (array $ids): array => self::labelsFor(ids: $ids))
             ->searchPrompt(__('Mention someone…'))
@@ -26,7 +27,7 @@ final class CommentMentionProvider
     {
         $exceptUserId ??= auth()->id();
 
-        $query = CommentModels::userQuery()
+        $query = CommentModels::mentionableUserQuery()
             ->whereNotNull('name')
             ->where('name', '!=', '');
 
@@ -69,7 +70,7 @@ final class CommentMentionProvider
             return [];
         }
 
-        return CommentModels::userQuery()
+        return CommentModels::mentionableUserQuery()
             ->whereIn('id', $ids)
             ->pluck('name', 'id')
             ->all();
