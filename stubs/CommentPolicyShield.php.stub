@@ -20,6 +20,8 @@ use Illuminate\Foundation\Auth\User as AuthUser;
  * Permissions (Pascal case, default Shield format):
  *   ViewAny:Comment, View:Comment, Create:Comment, Update:Comment,
  *   Delete:Comment, DeleteAny:Comment, …
+ *
+ * Pin/unpin uses `Update:Comment` (or optional custom `Pin:Comment` permission).
  */
 class CommentPolicy
 {

@@ -54,6 +54,7 @@ final class CommentComposerField
         string $layout,
         ?string $placeholder = null,
         ?CommentAttachmentContext $context = null,
+        ?bool $compactProfile = null,
     ): RichEditor|Textarea {
         if ($useRichEditor) {
             $field = RichEditor::make('body')
@@ -64,15 +65,23 @@ final class CommentComposerField
                 $field->placeholder($placeholder);
             }
 
+            $field = CommentUi::configureRichEditor($field, compactProfile: $compactProfile);
+
             return CommentAttachments::configureRichEditor(
                 editor: $field,
                 context: $context ?? new CommentAttachmentContext(composer: 'root'),
             );
         }
 
+        $rows = match (true) {
+            $compactProfile === true => 2,
+            $layout === 'compact' => 3,
+            default => 4,
+        };
+
         $field = Textarea::make('body')
             ->hiddenLabel()
-            ->rows($layout === 'compact' ? 3 : 4);
+            ->rows($rows);
 
         if ($placeholder !== null) {
             $field->placeholder($placeholder);
@@ -92,6 +101,8 @@ final class CommentComposerField
             ->visible(fn (string $operation): bool => $operation === 'create')
             ->dehydrated(false)
             ->columnSpanFull();
+
+        $field = CommentUi::configureRichEditor($field);
 
         return CommentAttachments::configureRichEditor(editor: $field, context: $context);
     }

@@ -33,4 +33,19 @@ class CommentsWidget extends Widget
     public bool $showHeading = true;
 
     public ?int $threadMaxHeight = null;
+
+    /**
+     * Per-panel condensed UI profile (smaller icons, typography, spacing).
+     */
+    public bool $compactProfile = false;
+
+    /**
+     * Enable a condensed panel profile for sidebars and dense workspaces.
+     */
+    public function compact(bool $compact = true): static
+    {
+        $this->compactProfile = $compact;
+
+        return $this;
+    }
 }

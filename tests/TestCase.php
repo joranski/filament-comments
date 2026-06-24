@@ -35,8 +35,13 @@ abstract class TestCase extends Orchestra
             NotificationsServiceProvider::class,
             FilamentServiceProvider::class,
             WidgetsServiceProvider::class,
-            FilamentCommentsServiceProvider::class,
         ];
+
+        if (class_exists(\Joranski\FilamentEmails\FilamentEmailsServiceProvider::class)) {
+            $providers[] = \Joranski\FilamentEmails\FilamentEmailsServiceProvider::class;
+        }
+
+        $providers[] = FilamentCommentsServiceProvider::class;
 
         if (class_exists(\Spatie\Permission\PermissionServiceProvider::class)) {
             $providers[] = \Spatie\Permission\PermissionServiceProvider::class;

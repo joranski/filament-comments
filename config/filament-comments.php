@@ -136,4 +136,46 @@ return [
     ],
 
     'commentable_urls' => [],
+
+    'tables' => [
+        'settings' => 'filament_comments_settings',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | UI density
+    |--------------------------------------------------------------------------
+    | Overridden by Package Settings (DB) when FilamentCommentsSettings is used.
+    */
+    'ui' => [
+        'compact_toolbar' => env('FILAMENT_COMMENTS_COMPACT_TOOLBAR', false),
+        'compact_action_icons' => env('FILAMENT_COMMENTS_COMPACT_ACTION_ICONS', false),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | AI (proofread / thread summary)
+    |--------------------------------------------------------------------------
+    | Bind CommentAiAssistant in your service provider. Package Settings toggles
+    | gate UI exposure; env enables the assistant binding path.
+    */
+    'ai' => [
+        'enabled' => env('FILAMENT_COMMENTS_AI_ENABLED', false),
+        'assistant' => env('FILAMENT_COMMENTS_AI_ASSISTANT'),
+        'proofread_enabled' => env('FILAMENT_COMMENTS_AI_PROOFREAD', false),
+        'proofread_default' => env('FILAMENT_COMMENTS_AI_PROOFREAD_DEFAULT', true),
+        'summarize_threads' => env('FILAMENT_COMMENTS_AI_SUMMARIZE_THREADS', false),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Package settings export (master Package Settings page via filament-emails)
+    |--------------------------------------------------------------------------
+    */
+    'settings' => [
+        'export' => [
+            'roles' => ['super_admin', 'admin'],
+            'sort' => 30,
+        ],
+    ],
 ];

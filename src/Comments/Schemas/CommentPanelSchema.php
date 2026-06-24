@@ -21,6 +21,7 @@ final class CommentPanelSchema
     public static function embeddedForm(
         ?array $excludedGroups = null,
         string $heading = 'Comments',
+        bool $compact = false,
     ): Component {
         return Group::make()
             ->schema([
@@ -34,6 +35,7 @@ final class CommentPanelSchema
                         ]),
                         'heading' => $heading,
                         'showHeading' => false,
+                        'compactProfile' => $compact,
                     ],
                 )->columnSpanFull(),
 
@@ -49,6 +51,7 @@ final class CommentPanelSchema
         string $layout = 'full',
         string $heading = 'Comments',
         ?int $threadMaxHeight = null,
+        bool $compact = false,
     ): array {
         return [
             'layout' => $layout,
@@ -61,6 +64,7 @@ final class CommentPanelSchema
             'heading' => $heading,
             'showHeading' => true,
             'threadMaxHeight' => $threadMaxHeight,
+            'compactProfile' => $compact,
         ];
     }
 }

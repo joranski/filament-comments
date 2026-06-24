@@ -12,8 +12,9 @@
                 'heading' => $heading,
                 'showHeading' => false,
                 'threadMaxHeight' => $threadMaxHeight,
+                'compactProfile' => $compactProfile,
             ],
-            key('comments-widget-'.($record?->getKey() ?? 'new').'-'.($group ?? 'all').'-'.($topic ?? 'all'))
+            key('comments-widget-'.($record?->getKey() ?? 'new').'-'.($group ?? 'all').'-'.($topic ?? 'all').'-'.($compactProfile ? 'compact' : 'default'))
         )
     </x-filament::section>
 </x-filament-widgets::widget>

@@ -1,8 +1,13 @@
 @php
     use Joranski\FilamentComments\Support\CommentAuthor;
     use Joranski\FilamentComments\Support\CommentThreadDepth;
+    use Joranski\FilamentComments\Support\CommentUi;
 
     $author = $comment->user;
+    $uiContext = $this->uiCompactProfileContext();
+    $condensed = CommentUi::isCondensed($uiContext);
+    $actionButtonSize = CommentUi::actionButtonSize($uiContext);
+    $rootAvatarSize = CommentUi::rootAvatarSize($uiContext);
     $canDelete = CommentAuthor::canDelete($comment);
     $canEdit = $allowEdit && CommentAuthor::canEdit($comment);
     $canPin = $allowPins && ! ($isReply ?? false) && CommentAuthor::canPin($comment);
@@ -19,15 +24,20 @@
 <div
     @class([
         'fi-comment-item relative flex w-full items-start gap-2 pr-4',
-        'pl-4 pt-4 pb-4' => $nestLevel === 0 && ! $hasRepliesBelow,
-        'pl-4 pt-4 pb-2' => $nestLevel === 0 && $hasRepliesBelow,
-        'py-1.5' => $nestLevel > 0,
+        'pl-4 pt-4 pb-4' => $nestLevel === 0 && ! $hasRepliesBelow && ! $condensed,
+        'pl-4 pt-4 pb-2' => $nestLevel === 0 && $hasRepliesBelow && ! $condensed,
+        'pl-3 pt-2.5 pb-2.5' => $nestLevel === 0 && ! $hasRepliesBelow && $condensed,
+        'pl-3 pt-2.5 pb-1.5' => $nestLevel === 0 && $hasRepliesBelow && $condensed,
+        'py-1.5' => $nestLevel > 0 && ! $condensed,
+        'py-1' => $nestLevel > 0 && $condensed,
     ])
     wire:key="comment-{{ $comment->id }}"
 >
     <div
         @class([
-            'flex min-w-0 flex-1 items-start gap-3',
+            'flex min-w-0 flex-1 items-start',
+            'gap-3' => ! $condensed,
+            'gap-2' => $condensed,
             'relative' => $isReplyItem,
         ])
         @if ($contentIndentCss)
@@ -44,7 +54,7 @@
         @endif
 
         <flux:avatar
-            :size="$isReplyItem ? 'xs' : 'sm'"
+            :size="$isReplyItem ? 'xs' : $rootAvatarSize"
             :name="CommentAuthor::displayName($author)"
             @class([
                 'shrink-0',
@@ -67,7 +77,8 @@
                 'comment' => $comment,
                 'showPinned' => $comment->is_pinned && ! $isReplyItem,
                 'showEdited' => (bool) $comment->edited_at,
-                'compact' => $isReplyItem,
+                'compact' => $isReplyItem || $condensed,
+                'condensed' => $condensed,
             ])
 
             @if ($isEditing)
@@ -77,8 +88,10 @@
             @else
                 <div @class([
                     'prose dark:prose-invert max-w-none text-zinc-700 dark:text-zinc-300 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
-                    'prose-sm mt-2' => $nestLevel === 0,
-                    'prose-sm mt-1 text-[0.9375rem] leading-relaxed' => $nestLevel > 0,
+                    'prose-sm mt-2' => $nestLevel === 0 && ! $condensed,
+                    'prose-sm mt-1.5 text-[0.8125rem] leading-snug' => $nestLevel === 0 && $condensed,
+                    'prose-sm mt-1 text-[0.9375rem] leading-relaxed' => $nestLevel > 0 && ! $condensed,
+                    'prose-sm mt-0.5 text-[0.8125rem] leading-snug' => $nestLevel > 0 && $condensed,
                 ])>
                     {!! $this->renderCommentBody($comment) !!}
                 </div>
@@ -97,7 +110,7 @@
             <flux:button
                 type="button"
                 variant="ghost"
-                size="sm"
+                size="{{ $actionButtonSize }}"
                 :icon="$comment->is_pinned ? 'bookmark-slash' : 'bookmark'"
                 wire:click="togglePin({{ $comment->id }})"
                 wire:loading.attr="disabled"
@@ -110,7 +123,7 @@
             <flux:button
                 type="button"
                 variant="ghost"
-                size="sm"
+                size="{{ $actionButtonSize }}"
                 icon="arrow-uturn-left"
                 wire:click="startReply({{ $comment->id }})"
                 wire:loading.attr="disabled"
@@ -123,7 +136,7 @@
             <flux:button
                 type="button"
                 variant="ghost"
-                size="sm"
+                size="{{ $actionButtonSize }}"
                 icon="pencil-square"
                 wire:click="startEdit({{ $comment->id }})"
                 wire:loading.attr="disabled"
@@ -136,7 +149,7 @@
             <flux:button
                 type="button"
                 variant="ghost"
-                size="sm"
+                size="{{ $actionButtonSize }}"
                 icon="trash"
                 color="danger"
                 wire:click="deleteComment({{ $comment->id }})"

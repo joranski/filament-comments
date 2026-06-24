@@ -16,3 +16,9 @@ test('service provider loads the comments table migration', function (): void {
         ->and(Schema::hasColumn('comments', 'parent_id'))->toBeTrue()
         ->and(Schema::hasColumn('comments', 'mentioned_user_ids'))->toBeTrue();
 });
+
+test('service provider loads package settings table migration', function (): void {
+    expect(Schema::hasTable('filament_comments_settings'))->toBeTrue()
+        ->and(Schema::hasColumn('filament_comments_settings', 'compact_toolbar'))->toBeTrue()
+        ->and(Schema::hasColumn('filament_comments_settings', 'ai_proofread_enabled'))->toBeTrue();
+});

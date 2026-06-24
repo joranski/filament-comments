@@ -6,8 +6,14 @@ namespace Joranski\FilamentComments;
 
 // @package-candidate score=EXTRACTED signals=1,2,4,5 extracted=2026-05-18
 
+use Joranski\FilamentComments\Ai\NullCommentAiAssistant;
 use Joranski\FilamentComments\Comments\Livewire\CommentPanel;
+use Joranski\FilamentComments\Contracts\CommentAiAssistant;
+use Joranski\FilamentComments\Filament\Settings\CommentsSettingsPanel;
+use Joranski\FilamentComments\Services\CommentAiProcessor;
+use Joranski\FilamentComments\Services\FilamentCommentsSettings;
 use Joranski\FilamentComments\Support\CommentAttachmentDefaults;
+use Joranski\FilamentEmails\Support\FilamentPackageSettingsRegistry;
 use Livewire\Livewire;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
@@ -22,6 +28,22 @@ class FilamentCommentsServiceProvider extends PackageServiceProvider
             ->hasViews();
     }
 
+    public function packageRegistered(): void
+    {
+        $this->app->singleton(FilamentCommentsSettings::class);
+        $this->app->singleton(CommentAiProcessor::class);
+
+        $this->app->bind(CommentAiAssistant::class, function ($app): CommentAiAssistant {
+            $class = config('filament-comments.ai.assistant', NullCommentAiAssistant::class);
+
+            if (! is_string($class) || $class === '' || ! class_exists($class)) {
+                return new NullCommentAiAssistant;
+            }
+
+            return $app->make($class);
+        });
+    }
+
     public function packageBooted(): void
     {
         $this->ensureLivewirePreviewMimesForAttachments();
@@ -29,6 +51,12 @@ class FilamentCommentsServiceProvider extends PackageServiceProvider
         Livewire::component('filament-comments.comment-panel', CommentPanel::class);
 
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
+
+        $this->app->booted(function (): void {
+            if (class_exists(FilamentPackageSettingsRegistry::class)) {
+                app(FilamentPackageSettingsRegistry::class)->register(CommentsSettingsPanel::class);
+            }
+        });
 
         if ($this->app->runningInConsole()) {
             $this->publishes([

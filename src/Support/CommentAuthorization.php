@@ -115,7 +115,15 @@ final class CommentAuthorization
         }
 
         if (self::usesPolicyChecks()) {
-            return $user->can('update', $comment);
+            if ($user->can('update', $comment)) {
+                return true;
+            }
+
+            if (method_exists($user, 'can') && $user->can('Pin:Comment')) {
+                return true;
+            }
+
+            return false;
         }
 
         return (bool) config('filament-comments.authorization.fallback.pin', false);

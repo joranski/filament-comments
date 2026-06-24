@@ -17,13 +17,15 @@ Built for morphMany `comments()` on any Eloquent record — orders, customers, s
 7. [Threading & UI behavior](#threading--ui-behavior)
 8. [Groups, topics & multiple panels](#groups-topics--multiple-panels)
 9. [Authorization](#authorization)
-10. [Features in detail](#features-in-detail)
-11. [File attachments](#file-attachments)
-12. [Lifecycle hooks](#lifecycle-hooks)
-13. [Customization](#customization)
-14. [Live chat sibling package](#live-chat-sibling-package)
-15. [Troubleshooting](#troubleshooting)
-16. [Testing](#testing)
+10. [Package settings export](#package-settings-export)
+11. [AI proofread & thread summary](#ai-proofread--thread-summary)
+12. [Features in detail](#features-in-detail)
+13. [File attachments](#file-attachments)
+14. [Lifecycle hooks](#lifecycle-hooks)
+15. [Customization](#customization)
+16. [Live chat sibling package](#live-chat-sibling-package)
+17. [Troubleshooting](#troubleshooting)
+18. [Testing](#testing)
 
 ---
 
@@ -384,6 +386,7 @@ Pass to `CommentsWidget::make([...])` or the Livewire component:
 | `allowSearch` | from config | In-panel text filter |
 | `allowEdit` | from config | Edit with `edited_at` audit |
 | `threadMaxHeight` | from config | Thread scroll area height (px) |
+| `compactProfile` | `false` | Condensed UI profile (smaller icons, text, spacing) — see [`->compact()`](#condensed-profile-compact) |
 
 ---
 
@@ -393,6 +396,64 @@ Pass to `CommentsWidget::make([...])` or the Livewire component:
 |--------|----------|----------|
 | `full` | Filament RichEditor with configurable toolbar | Filament native mention dropdown (`@` trigger) |
 | `compact` | Textarea | Alpine popup autocomplete (↑/↓/Enter/Escape) |
+
+> **Note:** `layout="compact"` switches the **composer control** to a textarea. It is unrelated to the condensed UI profile below.
+
+### Condensed profile (`->compact()`)
+
+Use **`->compact()`** when embedding comments in a narrow sidebar or multi-column workspace (e.g. order explorer conversation column). It reduces toolbar icons, thread action buttons, avatars, typography, and padding for a tighter profile.
+
+This is **per-panel** and stacks on top of global Package Settings density toggles (when `compactProfile` is true, compact toolbar + action icons are forced for that panel).
+
+**Filament widget (fluent on subclass or property bag):**
+
+```php
+use Joranski\FilamentComments\Comments\Widgets\CommentsWidget;
+
+// Filament widget registration (recommended)
+CommentsWidget::make([
+    'record' => $order,
+    'compactProfile' => true,
+]);
+
+// Or on a custom widget subclass in mount():
+$this->compact();
+```
+
+**Livewire / Blade:**
+
+```blade
+@livewire(\Joranski\FilamentComments\Comments\Livewire\CommentPanel::class, [
+    'record' => $order,
+    'compactProfile' => true,
+])
+```
+
+**Embedded resource form:**
+
+```php
+CommentPanelSchema::embeddedForm(compact: true);
+```
+
+**Widget configuration helper:**
+
+```php
+CommentPanelSchema::widgetConfiguration(
+    heading: 'Conversation',
+    threadMaxHeight: 480,
+    compact: true,
+);
+```
+
+| What shrinks | Default | With `->compact()` |
+|--------------|---------|-------------------|
+| RichEditor toolbar buttons | normal | smaller |
+| Pin / reply / edit / delete icons | `sm` | `xs` |
+| Root avatars | `sm` | `xs` |
+| Author / timestamp text | `sm` | `xs`–`sm` |
+| Thread padding & panel gaps | standard | tighter |
+| Add comment button | `base` | `sm` |
+| Search input | `base` | `sm` |
 
 **Composer placement:**
 
@@ -716,7 +777,7 @@ The Livewire panel does not expose restore, replicate, or reorder — those meth
 | Reply | `create` + depth limit | Same as create |
 | Edit | `update`, or author if `author_may_update_own` | Author only |
 | Delete | `deleteAny`, or `delete` + author if `author_may_delete_own` | Author only, no replies |
-| Pin | `update` on root | `fallback.pin` (default false) |
+| Pin | `update` on root, or optional `Pin:Comment` | `fallback.pin` (default false) |
 
 Delete is always blocked when `hasReplies()` is true unless the user has `deleteAny`.
 
@@ -777,6 +838,56 @@ Gate::policy(App\Models\Comment::class, App\Policies\CommentPolicy::class);
 ```
 
 The package **does not** require `filament-shield` or `spatie/laravel-permission` as Composer dependencies.
+
+---
+
+## Package settings export
+
+When [`joranski/filament-emails`](https://github.com/joranski/filament-emails) is installed, this package registers **`CommentsSettingsPanel`** on the shared **`FilamentPackageSettingsRegistry`**. The host app's master **Package Settings** page picks up a **Comments** tab automatically — same pattern as Email and SMS settings.
+
+| Setting | Purpose |
+|---------|---------|
+| **Compact RichEditor toolbar** | Smaller formatting buttons on root/reply/edit composers |
+| **Compact thread action icons** | Smaller pin, reply, edit, and delete Flux buttons |
+| **Enable AI proofread** | Shows a proofread toggle on the root composer when AI is enabled in `.env` |
+| **Proofread toggle default ON** | Default state of the proofread switch |
+| **Enable thread summarization** | Reserved for a future “Summarize thread” panel action |
+
+```php
+use Joranski\FilamentComments\Filament\Settings\CommentsSettingsPanel;
+
+CommentsSettingsPanel::embedSection(statePath: 'commentsSettings');
+// defaultState() + save($state) for persistence
+```
+
+Configure export roles in `config/filament-comments.php` under `settings.export.roles` (default: `super_admin`, `admin`).
+
+Optional `.env` defaults before the first DB row:
+
+```dotenv
+FILAMENT_COMMENTS_COMPACT_TOOLBAR=true
+FILAMENT_COMMENTS_COMPACT_ACTION_ICONS=true
+```
+
+For a **single dense panel** (e.g. order sidebar), prefer per-panel [`->compact()`](#condensed-profile-compact) instead of enabling globals for every comment panel in the app.
+
+---
+
+## AI proofread & thread summary
+
+Bind **`CommentAiAssistant`** in your service provider when AI is enabled:
+
+```dotenv
+FILAMENT_COMMENTS_AI_ENABLED=true
+FILAMENT_COMMENTS_AI_ASSISTANT=App\\Ai\\CommentProofreadAssistant
+```
+
+| Feature | When | Notes |
+|---------|------|-------|
+| **Proofread** | Root compose (toggle) and edit (when default ON) | Polishes HTML before save |
+| **Summarize thread** | API via `CommentAiProcessor::summarizeThreadIfEnabled()` | UI hook reserved |
+
+When AI is disabled, **`NullCommentAiAssistant`** is used (no-op).
 
 ---
 

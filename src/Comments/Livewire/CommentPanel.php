@@ -34,6 +34,7 @@ use Joranski\FilamentComments\Support\CommentMentionParser;
 use Joranski\FilamentComments\Support\CommentMentionProvider;
 use Joranski\FilamentComments\Support\CommentReplyNotifier;
 use Joranski\FilamentComments\Support\CommentThreadDepth;
+use Joranski\FilamentComments\Services\CommentAiProcessor;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 
@@ -104,6 +105,13 @@ class CommentPanel extends Component implements HasActions, HasForms
     /** @var array<string, mixed>|null */
     public ?array $pendingCommentPayload = null;
 
+    public bool $proofreadWithAi = false;
+
+    /**
+     * Per-panel condensed UI (smaller icons, text, padding). Distinct from {@see $layout} `compact` (textarea).
+     */
+    public bool $compactProfile = false;
+
     public function mount(
         ?Model $record = null,
         string $layout = 'full',
@@ -121,6 +129,7 @@ class CommentPanel extends Component implements HasActions, HasForms
         ?bool $allowSearch = null,
         ?bool $allowEdit = null,
         ?int $threadMaxHeight = null,
+        bool $compactProfile = false,
     ): void {
         $this->record = $record;
         $this->layout = $layout;
@@ -138,9 +147,37 @@ class CommentPanel extends Component implements HasActions, HasForms
         $this->allowSearch = $allowSearch ?? (bool) config('filament-comments.features.search', true);
         $this->allowEdit = $allowEdit ?? (bool) config('filament-comments.features.edit', true);
         $this->threadMaxHeight = $threadMaxHeight;
+        $this->compactProfile = $compactProfile;
+
+        $processor = app(CommentAiProcessor::class);
+        $this->proofreadWithAi = $processor->showsProofreadToggle()
+            && $processor->defaultProofreadToggle();
 
         $this->form->fill(['body' => null]);
         $this->replyForm->fill(['body' => null]);
+    }
+
+    /**
+     * Enable a condensed panel profile (smaller icons, typography, and spacing).
+     */
+    public function compact(bool $compact = true): static
+    {
+        $this->compactProfile = $compact;
+
+        return $this;
+    }
+
+    /**
+     * When true, per-panel condensed styling overrides global density settings.
+     */
+    public function usesCompactProfile(): bool
+    {
+        return $this->compactProfile;
+    }
+
+    public function uiCompactProfileContext(): ?bool
+    {
+        return $this->compactProfile ? true : null;
     }
 
     public function isReplyingToComment(int $commentId): bool
@@ -168,6 +205,11 @@ class CommentPanel extends Component implements HasActions, HasForms
         }
 
         return $this->comments->isNotEmpty() || filled(trim($this->search));
+    }
+
+    public function showsProofreadToggle(): bool
+    {
+        return app(CommentAiProcessor::class)->showsProofreadToggle();
     }
 
     public function form(Schema $schema): Schema
@@ -211,6 +253,7 @@ class CommentPanel extends Component implements HasActions, HasForms
             layout: $this->layout,
             placeholder: $placeholder,
             context: $context,
+            compactProfile: $this->uiCompactProfileContext(),
         );
 
         $editor = $this->configureMentions($editor);
@@ -400,6 +443,7 @@ class CommentPanel extends Component implements HasActions, HasForms
         }
 
         $body = $this->normalizeBody($this->editForm->getState()['body'] ?? null);
+        $body = $this->applyAiProofread(body: $body, composer: 'edit');
 
         if (! $this->isValidBody($body)) {
             $this->notifyInvalidBody();
@@ -762,6 +806,8 @@ class CommentPanel extends Component implements HasActions, HasForms
         }
 
         $body = $this->normalizeBody($rawBody);
+        $composer = $parentId === null ? 'root' : 'reply';
+        $body = $this->applyAiProofread(body: $body, composer: $composer);
 
         if (! $this->isValidBody($body)) {
             $this->notifyInvalidBody();
@@ -769,7 +815,6 @@ class CommentPanel extends Component implements HasActions, HasForms
             return null;
         }
 
-        $composer = $parentId === null ? 'root' : 'reply';
         $context = $this->attachmentContext(composer: $composer);
 
         $beforeResult = CommentLifecycle::beforeCreate(new CommentLifecycleEvent(
@@ -803,6 +848,19 @@ class CommentPanel extends Component implements HasActions, HasForms
             composer: $composer,
             metadata: $beforeResult->metadata,
         );
+    }
+
+    protected function applyAiProofread(string $body, string $composer): string
+    {
+        $processor = app(CommentAiProcessor::class);
+
+        $requested = match ($composer) {
+            'root' => $this->proofreadWithAi,
+            'edit' => $processor->defaultProofreadToggle(),
+            default => false,
+        };
+
+        return $processor->applyProofreadIfRequested(bodyHtml: $body, requested: $requested);
     }
 
     /**

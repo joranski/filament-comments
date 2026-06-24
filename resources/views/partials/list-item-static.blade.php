@@ -1,7 +1,9 @@
 @php
     use Joranski\FilamentComments\Support\CommentAuthor;
+    use Joranski\FilamentComments\Support\CommentUi;
 
     $author = $comment->user;
+    $actionButtonSize = CommentUi::actionButtonSize();
     $canDelete = ($showDelete ?? true) && CommentAuthor::canDelete($comment);
 @endphp
 
@@ -25,7 +27,7 @@
                 <flux:button
                     type="button"
                     variant="ghost"
-                    size="sm"
+                    size="{{ $actionButtonSize }}"
                     icon="trash"
                     color="danger"
                     wire:click="deleteComment({{ $comment->id }})"

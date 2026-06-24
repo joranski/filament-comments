@@ -130,6 +130,52 @@ test('comment authorization grants view when user has shield view permission', f
         ->and(CommentAuthorization::canCreate($viewer))->toBeFalse();
 });
 
+test('comment authorization grants pin when user has shield update permission', function (): void {
+    config(['filament-comments.authorization.mode' => 'auto']);
+
+    Gate::policy(Comment::class, ShieldCommentPolicy::class);
+
+    $role = Role::query()->firstOrCreate(['name' => 'comment-moderator', 'guard_name' => 'web']);
+    Permission::query()->firstOrCreate(['name' => 'Update:Comment', 'guard_name' => 'web']);
+    $role->syncPermissions(['Update:Comment']);
+
+    $moderator = \User::factory()->create();
+    $moderator->assignRole($role);
+
+    $commentable = \TestCommentable::factory()->create();
+
+    $comment = $commentable->comments()->create([
+        'user_id' => \User::factory()->create()->id,
+        'comment' => '<p>Pin me</p>',
+        'active' => true,
+    ]);
+
+    expect(CommentAuthorization::canPin($comment, $moderator))->toBeTrue();
+});
+
+test('comment authorization grants pin when user has optional Pin permission', function (): void {
+    config(['filament-comments.authorization.mode' => 'auto']);
+
+    Gate::policy(Comment::class, ShieldCommentPolicy::class);
+
+    $role = Role::query()->firstOrCreate(['name' => 'comment-pinner', 'guard_name' => 'web']);
+    Permission::query()->firstOrCreate(['name' => 'Pin:Comment', 'guard_name' => 'web']);
+    $role->syncPermissions(['Pin:Comment']);
+
+    $pinner = \User::factory()->create();
+    $pinner->assignRole($role);
+
+    $commentable = \TestCommentable::factory()->create();
+
+    $comment = $commentable->comments()->create([
+        'user_id' => \User::factory()->create()->id,
+        'comment' => '<p>Pin me</p>',
+        'active' => true,
+    ]);
+
+    expect(CommentAuthorization::canPin($comment, $pinner))->toBeTrue();
+});
+
 test('comment authorization hides panel thread when viewAny is denied', function (): void {
     config(['filament-comments.authorization.mode' => 'auto']);
 
