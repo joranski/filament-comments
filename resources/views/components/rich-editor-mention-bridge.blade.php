@@ -19,12 +19,11 @@
             x-cloak
             x-show="open"
             x-transition.opacity
-            x-on:mousedown.prevent.stop
-            x-on:pointerdown.prevent.stop
             class="fi-comments-mention-dropdown fixed w-72 max-h-60 overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-white/10 dark:bg-zinc-900"
             :style="`top: ${position.top}px; left: ${position.left}px;`"
             role="listbox"
             aria-label="{{ __('Mention suggestions') }}"
+            x-on:mousedown.prevent
         >
             <div
                 x-show="loading"
@@ -46,8 +45,7 @@
                     x-show="! loading && users.length > 0"
                     class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-zinc-50 dark:hover:bg-white/5"
                     :class="{ 'bg-zinc-50 dark:bg-white/5': index === selectedIndex }"
-                    x-on:mousedown.prevent.stop="pickUser(user)"
-                    x-on:click.prevent.stop="pickUser(user)"
+                    x-on:pointerdown.prevent.stop="pickUser(user)"
                     role="option"
                 >
                     <span
@@ -109,39 +107,45 @@
                     this.unbindEditor()
                 },
 
-                bindEditor() {
+                getFreshEditor() {
                     const host = this.$el.querySelector('[x-ref="editor"]')?.closest('[x-data]')
 
                     if (! host || typeof Alpine === 'undefined' || typeof Alpine.$data !== 'function') {
-                        return
+                        return this.editor
                     }
 
                     const alpineData = Alpine.$data(host)
 
                     if (! alpineData || typeof alpineData.getEditor !== 'function') {
-                        return
+                        return this.editor
                     }
 
-                    const nextEditor = alpineData.getEditor()
+                    const freshEditor = alpineData.getEditor()
 
-                    if (! nextEditor || nextEditor === this.editor) {
-                        return
+                    if (! freshEditor) {
+                        return this.editor
                     }
 
-                    this.unbindEditor()
-                    this.editor = nextEditor
-                    this.editorDom = nextEditor.view?.dom ?? null
+                    if (freshEditor !== this.editor) {
+                        this.unbindEditor()
+                        this.editor = freshEditor
+                        this.editorDom = freshEditor.view?.dom ?? null
 
-                    if (! this.editorDom) {
-                        return
+                        if (this.editorDom) {
+                            this.onEditorKeydown = (event) => this.handleEditorKeydown(event)
+                            this.onEditorUpdate = () => this.syncMentionQuery()
+
+                            this.editorDom.addEventListener('keydown', this.onEditorKeydown, true)
+                            this.editor.on('update', this.onEditorUpdate)
+                            this.editor.on('selectionUpdate', this.onEditorUpdate)
+                        }
                     }
 
-                    this.onEditorKeydown = (event) => this.handleEditorKeydown(event)
-                    this.onEditorUpdate = () => this.syncMentionQuery()
+                    return this.editor
+                },
 
-                    this.editorDom.addEventListener('keydown', this.onEditorKeydown, true)
-                    this.editor.on('update', this.onEditorUpdate)
-                    this.editor.on('selectionUpdate', this.onEditorUpdate)
+                bindEditor() {
+                    this.getFreshEditor()
                 },
 
                 unbindEditor() {
@@ -158,13 +162,13 @@
                     this.editorDom = null
                 },
 
-                syncMentionQuery() {
-                    if (! this.editor || this.isPicking) {
-                        return
+                resolveMentionRange(editor = this.getFreshEditor()) {
+                    if (! editor) {
+                        return null
                     }
 
-                    const { from } = this.editor.state.selection
-                    const textBefore = this.editor.state.doc.textBetween(
+                    const { from } = editor.state.selection
+                    const textBefore = editor.state.doc.textBetween(
                         Math.max(0, from - 200),
                         from,
                         '\n',
@@ -173,14 +177,48 @@
                     const match = textBefore.match(/(^|\s)@([^\s@]*)$/)
 
                     if (! match) {
+                        return null
+                    }
+
+                    const range = {
+                        from: from - match[2].length - 1,
+                        to: from,
+                    }
+
+                    this.mentionStart = range.from
+                    this.mentionRange = range
+                    this.query = match[2]
+
+                    return range
+                },
+
+                dismissFilamentSuggestion(editor = this.getFreshEditor()) {
+                    if (! editor?.view?.dom) {
+                        return
+                    }
+
+                    editor.view.dom.dispatchEvent(
+                        new KeyboardEvent('keydown', {
+                            key: 'Escape',
+                            bubbles: true,
+                            cancelable: true,
+                        }),
+                    )
+                },
+
+                syncMentionQuery() {
+                    if (! this.getFreshEditor() || this.isPicking) {
+                        return
+                    }
+
+                    const range = this.resolveMentionRange()
+
+                    if (! range) {
                         this.close()
 
                         return
                     }
 
-                    this.mentionStart = from - match[2].length - 1
-                    this.mentionRange = { from: this.mentionStart, to: from }
-                    this.query = match[2]
                     this.open = true
                     this.searchCompleted = false
                     this.updatePosition()
@@ -212,6 +250,7 @@
                         this.selectedIndex = 0
                         this.loading = false
                         this.searchCompleted = true
+                        this.resolveMentionRange()
                         this.updatePosition()
                     }, 200)
                 },
@@ -263,32 +302,21 @@
                 },
 
                 selectUser(user) {
-                    const range = this.mentionRange
+                    const editor = this.getFreshEditor()
 
-                    if (! this.editor || ! range || ! user) {
+                    if (! editor || ! user) {
                         return
                     }
 
-                    const props = {
-                        id: String(user.id),
-                        label: user.name,
-                    }
+                    this.dismissFilamentSuggestion(editor)
 
-                    const suggestion = this.editor.extensionStorage?.mention?.getSuggestionFromChar?.('@')
+                    const range = this.resolveMentionRange(editor)
 
-                    if (typeof suggestion?.command === 'function') {
-                        suggestion.command({
-                            editor: this.editor,
-                            range: { from: range.from, to: range.to },
-                            props,
-                        })
-
-                        this.close()
-
+                    if (! range) {
                         return
                     }
 
-                    this.editor
+                    editor
                         .chain()
                         .focus()
                         .deleteRange({ from: range.from, to: range.to })
@@ -296,7 +324,8 @@
                             {
                                 type: 'mention',
                                 attrs: {
-                                    ...props,
+                                    id: String(user.id),
+                                    label: user.name,
                                     char: '@',
                                 },
                             },
