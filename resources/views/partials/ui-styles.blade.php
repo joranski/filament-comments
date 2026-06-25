@@ -33,8 +33,23 @@
 
 @if ($this->allowMentions && $this->usesRichEditor())
     <style>
-        body > .fi-dropdown-panel.fi-dropdown-list {
-            z-index: 200 !important;
+        .fi-comments-mention-dropdown {
+            position: fixed !important;
+            z-index: 2147483000 !important;
+            pointer-events: auto !important;
+        }
+
+        /*
+         * Filament's RichEditor mention suggestion may still mount an empty
+         * body-level panel ("No results found") above our bridge — keep it below.
+         */
+        body > .fi-dropdown-panel.fi-scrollable:not(:has(.fi-dropdown-list-item)) {
+            z-index: 40 !important;
+        }
+
+        body:has(.fi-comments-mention-dropdown[style*='display: block']) > .fi-dropdown-panel.fi-scrollable {
+            visibility: hidden !important;
+            pointer-events: none !important;
         }
     </style>
 @endif

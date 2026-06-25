@@ -53,3 +53,15 @@ test('compact profile mention provider includes initial users for empty query', 
 
     expect(CommentMentionProvider::make()->getItems())->toHaveKey((string) $other->id);
 });
+
+test('comment rich editor mention bridge view is registered', function (): void {
+    expect(view()->exists('filament-comments::components.rich-editor-mention-bridge'))->toBeTrue();
+
+    $richEditor = file_get_contents(__DIR__.'/../../resources/views/components/rich-editor.blade.php');
+    $bridge = file_get_contents(__DIR__.'/../../resources/views/components/rich-editor-mention-bridge.blade.php');
+
+    expect($richEditor)->toContain('rich-editor-mention-bridge')
+        ->and($bridge)->toContain('commentRichEditorMentionBridge')
+        ->and($bridge)->toContain('fi-comments-mention-dropdown')
+        ->and($bridge)->toContain('x-teleport="body"');
+});

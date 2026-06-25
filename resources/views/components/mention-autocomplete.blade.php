@@ -12,15 +12,16 @@
 >
     {{ $slot }}
 
-    <div
-        x-cloak
-        x-show="open && users.length > 0"
-        x-transition.opacity
-        class="fixed z-[100] max-h-60 w-72 overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-white/10 dark:bg-zinc-900"
-        :style="`top: ${position.top}px; left: ${position.left}px;`"
-        role="listbox"
-        aria-label="{{ __('Mention suggestions') }}"
-    >
+    <template x-teleport="body">
+        <div
+            x-cloak
+            x-show="open && users.length > 0"
+            x-transition.opacity
+            class="fi-comments-mention-dropdown fixed max-h-60 w-72 overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-white/10 dark:bg-zinc-900"
+            :style="`top: ${position.top}px; left: ${position.left}px;`"
+            role="listbox"
+            aria-label="{{ __('Mention suggestions') }}"
+        >
         <template x-for="(user, index) in users" :key="user.id">
             <button
                 type="button"
@@ -36,25 +37,30 @@
                 <span x-text="user.name" class="truncate font-medium text-zinc-900 dark:text-white"></span>
             </button>
         </template>
-    </div>
+        </div>
+    </template>
 
-    <div
-        x-cloak
-        x-show="open && loading"
-        class="fixed z-[100] w-72 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-500 shadow-lg dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-400"
-        :style="`top: ${position.top}px; left: ${position.left}px;`"
-    >
-        {{ __('Searching users…') }}
-    </div>
+    <template x-teleport="body">
+        <div
+            x-cloak
+            x-show="open && loading"
+            class="fi-comments-mention-dropdown fixed w-72 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-500 shadow-lg dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-400"
+            :style="`top: ${position.top}px; left: ${position.left}px;`"
+        >
+            {{ __('Searching users…') }}
+        </div>
+    </template>
 
-    <div
-        x-cloak
-        x-show="open && ! loading && users.length === 0"
-        class="fixed z-[100] w-72 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-500 shadow-lg dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-400"
-        :style="`top: ${position.top}px; left: ${position.left}px;`"
-    >
-        {{ __('No users found.') }}
-    </div>
+    <template x-teleport="body">
+        <div
+            x-cloak
+            x-show="open && ! loading && users.length === 0"
+            class="fi-comments-mention-dropdown fixed w-72 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-500 shadow-lg dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-400"
+            :style="`top: ${position.top}px; left: ${position.left}px;`"
+        >
+            {{ __('No users found.') }}
+        </div>
+    </template>
 </div>
 
 @once

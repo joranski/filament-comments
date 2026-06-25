@@ -20,6 +20,10 @@
     $commentPanelLivewireId = $this->getId();
 @endphp
 
+@php
+    $useMentionBridge = filled($mentions);
+@endphp
+
 <x-dynamic-component :component="$fieldWrapperView" :field="$field">
     <x-filament::input.wrapper
         :disabled="$isDisabled"
@@ -30,6 +34,14 @@
                 ->class(['fi-fo-rich-editor'])
         "
     >
+        @if ($useMentionBridge)
+            <x-filament-comments::rich-editor-mention-bridge
+                :comment-panel-livewire-id="$commentPanelLivewireId"
+                :schema-component-key="$key"
+                :state-path="$statePath"
+            >
+        @endif
+
         <div
             x-load
             x-load-src="{{ \Filament\Support\Facades\FilamentAsset::getAlpineComponentSrc('rich-editor', 'filament/forms') }}"
@@ -286,5 +298,9 @@
                 @endif
             </div>
         </div>
+
+        @if ($useMentionBridge)
+            </x-filament-comments::rich-editor-mention-bridge>
+        @endif
     </x-filament::input.wrapper>
 </x-dynamic-component>
