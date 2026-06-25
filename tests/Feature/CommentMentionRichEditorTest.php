@@ -63,5 +63,8 @@ test('comment rich editor mention bridge view is registered', function (): void 
     expect($richEditor)->toContain('rich-editor-mention-bridge')
         ->and($bridge)->toContain('commentRichEditorMentionBridge')
         ->and($bridge)->toContain('fi-comments-mention-dropdown')
-        ->and($bridge)->toContain('x-teleport="body"');
+        ->and($bridge)->toContain('x-teleport="body"')
+        ->and($bridge)->toContain('mentionRange')
+        ->and($bridge)->toContain('pickUser(user)')
+        ->and($bridge)->toContain('getSuggestionFromChar');
 });

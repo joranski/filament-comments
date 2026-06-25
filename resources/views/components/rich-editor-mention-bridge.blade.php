@@ -19,41 +19,43 @@
             x-cloak
             x-show="open"
             x-transition.opacity
+            x-on:mousedown.prevent.stop
+            x-on:pointerdown.prevent.stop
             class="fi-comments-mention-dropdown fixed w-72 max-h-60 overflow-y-auto rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-white/10 dark:bg-zinc-900"
             :style="`top: ${position.top}px; left: ${position.left}px;`"
             role="listbox"
             aria-label="{{ __('Mention suggestions') }}"
         >
-            <template x-if="loading">
-                <div class="px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400">
-                    {{ __('Searching users…') }}
-                </div>
-            </template>
+            <div
+                x-show="loading"
+                class="px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400"
+            >
+                {{ __('Searching users…') }}
+            </div>
 
-            <template x-if="! loading && searchCompleted && users.length === 0">
-                <div class="px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400">
-                    {{ __('No users found.') }}
-                </div>
-            </template>
+            <div
+                x-show="! loading && searchCompleted && users.length === 0"
+                class="px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400"
+            >
+                {{ __('No users found.') }}
+            </div>
 
-            <template x-if="! loading && users.length > 0">
-                <div>
-                    <template x-for="(user, index) in users" :key="user.id">
-                        <button
-                            type="button"
-                            class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-zinc-50 dark:hover:bg-white/5"
-                            :class="{ 'bg-zinc-50 dark:bg-white/5': index === selectedIndex }"
-                            x-on:mousedown.prevent="selectUser(user)"
-                            role="option"
-                        >
-                            <span
-                                class="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-xs font-semibold uppercase text-zinc-700 dark:bg-white/10 dark:text-zinc-200"
-                                x-text="user.name.split(' ').filter(Boolean).slice(0, 2).map(part => part[0]).join('')"
-                            ></span>
-                            <span x-text="user.name" class="truncate font-medium text-zinc-900 dark:text-white"></span>
-                        </button>
-                    </template>
-                </div>
+            <template x-for="(user, index) in users" :key="user.id">
+                <button
+                    type="button"
+                    x-show="! loading && users.length > 0"
+                    class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-zinc-50 dark:hover:bg-white/5"
+                    :class="{ 'bg-zinc-50 dark:bg-white/5': index === selectedIndex }"
+                    x-on:mousedown.prevent.stop="pickUser(user)"
+                    x-on:click.prevent.stop="pickUser(user)"
+                    role="option"
+                >
+                    <span
+                        class="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-xs font-semibold uppercase text-zinc-700 dark:bg-white/10 dark:text-zinc-200"
+                        x-text="user.name.split(' ').filter(Boolean).slice(0, 2).map(part => part[0]).join('')"
+                    ></span>
+                    <span x-text="user.name" class="truncate font-medium text-zinc-900 dark:text-white"></span>
+                </button>
             </template>
         </div>
     </template>
@@ -81,6 +83,8 @@
                 users: [],
                 selectedIndex: 0,
                 mentionStart: null,
+                mentionRange: null,
+                isPicking: false,
                 searchTimer: null,
                 searchCompleted: false,
                 position: { top: 0, left: 0 },
@@ -155,7 +159,7 @@
                 },
 
                 syncMentionQuery() {
-                    if (! this.editor) {
+                    if (! this.editor || this.isPicking) {
                         return
                     }
 
@@ -175,6 +179,7 @@
                     }
 
                     this.mentionStart = from - match[2].length - 1
+                    this.mentionRange = { from: this.mentionStart, to: from }
                     this.query = match[2]
                     this.open = true
                     this.searchCompleted = false
@@ -235,7 +240,7 @@
                     if (event.key === 'Enter' && this.users[this.selectedIndex]) {
                         event.preventDefault()
                         event.stopPropagation()
-                        this.selectUser(this.users[this.selectedIndex])
+                        this.pickUser(this.users[this.selectedIndex])
 
                         return
                     }
@@ -247,24 +252,51 @@
                     }
                 },
 
+                pickUser(user) {
+                    this.isPicking = true
+
+                    try {
+                        this.selectUser(user)
+                    } finally {
+                        this.isPicking = false
+                    }
+                },
+
                 selectUser(user) {
-                    if (! this.editor || this.mentionStart === null) {
+                    const range = this.mentionRange
+
+                    if (! this.editor || ! range || ! user) {
                         return
                     }
 
-                    const from = this.mentionStart
-                    const to = this.editor.state.selection.from
+                    const props = {
+                        id: String(user.id),
+                        label: user.name,
+                    }
+
+                    const suggestion = this.editor.extensionStorage?.mention?.getSuggestionFromChar?.('@')
+
+                    if (typeof suggestion?.command === 'function') {
+                        suggestion.command({
+                            editor: this.editor,
+                            range: { from: range.from, to: range.to },
+                            props,
+                        })
+
+                        this.close()
+
+                        return
+                    }
 
                     this.editor
                         .chain()
                         .focus()
-                        .deleteRange({ from, to })
-                        .insertContentAt(from, [
+                        .deleteRange({ from: range.from, to: range.to })
+                        .insertContentAt(range.from, [
                             {
                                 type: 'mention',
                                 attrs: {
-                                    id: String(user.id),
-                                    label: user.name,
+                                    ...props,
                                     char: '@',
                                 },
                             },
@@ -307,6 +339,7 @@
                     this.query = ''
                     this.users = []
                     this.mentionStart = null
+                    this.mentionRange = null
                     window.clearTimeout(this.searchTimer)
                 },
             }))
