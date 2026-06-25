@@ -72,8 +72,9 @@
                 commentPanelLivewireId: config.commentPanelLivewireId,
                 schemaComponentKey: config.schemaComponentKey,
                 statePath: config.statePath,
-                editor: null,
+                editorHostEl: null,
                 editorDom: null,
+                boundEditor: null,
                 loadedEventName: null,
                 open: false,
                 loading: false,
@@ -91,12 +92,12 @@
                     this.loadedEventName = `schema-component-${this.commentPanelLivewireId}-${this.schemaComponentKey}-loaded`
 
                     this.onEditorLoaded = () => {
-                        this.bindEditor()
+                        this.bindEditorListeners()
                     }
 
                     window.addEventListener(this.loadedEventName, this.onEditorLoaded)
 
-                    this.$nextTick(() => this.bindEditor())
+                    this.$nextTick(() => this.bindEditorListeners())
                 },
 
                 destroy() {
@@ -104,65 +105,66 @@
                         window.removeEventListener(this.loadedEventName, this.onEditorLoaded)
                     }
 
-                    this.unbindEditor()
+                    this.unbindEditorListeners()
                 },
 
-                getFreshEditor() {
-                    const host = this.$el.querySelector('[x-ref="editor"]')?.closest('[x-data]')
+                editorHost() {
+                    return this.$el.querySelector('[x-ref="editor"]')?.closest('[x-data]') ?? null
+                },
+
+                resolveEditor() {
+                    const host = this.editorHost()
 
                     if (! host || typeof Alpine === 'undefined' || typeof Alpine.$data !== 'function') {
-                        return this.editor
+                        return null
                     }
 
                     const alpineData = Alpine.$data(host)
 
                     if (! alpineData || typeof alpineData.getEditor !== 'function') {
-                        return this.editor
+                        return null
                     }
 
-                    const freshEditor = alpineData.getEditor()
-
-                    if (! freshEditor) {
-                        return this.editor
-                    }
-
-                    if (freshEditor !== this.editor) {
-                        this.unbindEditor()
-                        this.editor = freshEditor
-                        this.editorDom = freshEditor.view?.dom ?? null
-
-                        if (this.editorDom) {
-                            this.onEditorKeydown = (event) => this.handleEditorKeydown(event)
-                            this.onEditorUpdate = () => this.syncMentionQuery()
-
-                            this.editorDom.addEventListener('keydown', this.onEditorKeydown, true)
-                            this.editor.on('update', this.onEditorUpdate)
-                            this.editor.on('selectionUpdate', this.onEditorUpdate)
-                        }
-                    }
-
-                    return this.editor
+                    return alpineData.getEditor()
                 },
 
-                bindEditor() {
-                    this.getFreshEditor()
+                bindEditorListeners() {
+                    const editor = this.resolveEditor()
+
+                    if (! editor?.view?.dom || editor === this.boundEditor) {
+                        return
+                    }
+
+                    this.unbindEditorListeners()
+
+                    this.boundEditor = editor
+                    this.editorHostEl = this.editorHost()
+                    this.editorDom = editor.view.dom
+
+                    this.onEditorKeydown = (event) => this.handleEditorKeydown(event)
+                    this.onEditorUpdate = () => this.syncMentionQuery()
+
+                    this.editorDom.addEventListener('keydown', this.onEditorKeydown, true)
+                    editor.on('update', this.onEditorUpdate)
+                    editor.on('selectionUpdate', this.onEditorUpdate)
                 },
 
-                unbindEditor() {
+                unbindEditorListeners() {
                     if (this.editorDom && this.onEditorKeydown) {
                         this.editorDom.removeEventListener('keydown', this.onEditorKeydown, true)
                     }
 
-                    if (this.editor && this.onEditorUpdate) {
-                        this.editor.off('update', this.onEditorUpdate)
-                        this.editor.off('selectionUpdate', this.onEditorUpdate)
+                    if (this.boundEditor && this.onEditorUpdate) {
+                        this.boundEditor.off('update', this.onEditorUpdate)
+                        this.boundEditor.off('selectionUpdate', this.onEditorUpdate)
                     }
 
-                    this.editor = null
+                    this.boundEditor = null
+                    this.editorHostEl = null
                     this.editorDom = null
                 },
 
-                resolveMentionRange(editor = this.getFreshEditor()) {
+                resolveMentionRange(editor = this.resolveEditor()) {
                     if (! editor) {
                         return null
                     }
@@ -192,24 +194,12 @@
                     return range
                 },
 
-                dismissFilamentSuggestion(editor = this.getFreshEditor()) {
-                    if (! editor?.view?.dom) {
-                        return
-                    }
-
-                    editor.view.dom.dispatchEvent(
-                        new KeyboardEvent('keydown', {
-                            key: 'Escape',
-                            bubbles: true,
-                            cancelable: true,
-                        }),
-                    )
-                },
-
                 syncMentionQuery() {
-                    if (! this.getFreshEditor() || this.isPicking) {
+                    if (this.isPicking) {
                         return
                     }
+
+                    this.bindEditorListeners()
 
                     const range = this.resolveMentionRange()
 
@@ -256,6 +246,10 @@
                 },
 
                 handleEditorKeydown(event) {
+                    if (this.isPicking) {
+                        return
+                    }
+
                     if (! this.open) {
                         return
                     }
@@ -302,13 +296,11 @@
                 },
 
                 selectUser(user) {
-                    const editor = this.getFreshEditor()
+                    const editor = this.resolveEditor()
 
                     if (! editor || ! user) {
                         return
                     }
-
-                    this.dismissFilamentSuggestion(editor)
 
                     const range = this.resolveMentionRange(editor)
 
@@ -340,12 +332,14 @@
                 },
 
                 updatePosition() {
-                    if (! this.editor || this.mentionStart === null) {
+                    const editor = this.resolveEditor()
+
+                    if (! editor || this.mentionStart === null) {
                         return
                     }
 
                     try {
-                        const coords = this.editor.view.coordsAtPos(this.mentionStart)
+                        const coords = editor.view.coordsAtPos(this.mentionStart)
                         const dropdownHeight = 240
                         const spaceBelow = window.innerHeight - coords.bottom
                         const spaceAbove = coords.top

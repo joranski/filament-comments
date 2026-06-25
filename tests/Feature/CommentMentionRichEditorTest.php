@@ -67,5 +67,5 @@ test('comment rich editor mention bridge view is registered', function (): void 
         ->and($bridge)->toContain('mentionRange')
         ->and($bridge)->toContain('pickUser(user)')
         ->and($bridge)->toContain('resolveMentionRange')
-        ->and($bridge)->toContain('dismissFilamentSuggestion');
+        ->and($bridge)->toContain('resolveEditor()');
 });
