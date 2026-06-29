@@ -14,6 +14,7 @@ final class CommentContentRenderer
     public function render(string $html, ?array $mentionedUserIds = null): HtmlString
     {
         $html = CommentAttachmentHtmlTransformer::transform(html: $html);
+        $html = CommentBodyTransformers::transform(html: $html);
 
         if ($mentionedUserIds === null || $mentionedUserIds === []) {
             return new HtmlString($html);

@@ -100,6 +100,10 @@ final class CommentLifecycle
             $hook = app($hookClass);
             $hook->{$method}($event);
         }
+
+        if ($method === 'afterCreate' || $method === 'afterUpdate') {
+            CommentSpread::afterSaved(event: $event);
+        }
     }
 
     /**

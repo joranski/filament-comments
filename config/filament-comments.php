@@ -91,6 +91,36 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Comment body transformers (display-time)
+    |--------------------------------------------------------------------------
+    |
+    | Classes implementing CommentBodyTransformer run after attachment HTML is
+    | normalized and before @mention highlighting. Use for autolinking tracking
+    | numbers, sanitizing embeds, etc.
+    |
+    */
+    'body_transformers' => [
+        // App\Support\Comments\TrackingCommentBodyTransformer::class,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Comment spread handlers (persistence-time)
+    |--------------------------------------------------------------------------
+    |
+    | After a comment is created or updated, handlers can extract structured
+    | data from the body and propagate it to the host application (shipments,
+    | webhooks, CRM fields, etc.).
+    |
+    */
+    'spread' => [
+        'handlers' => [
+            // App\Support\Comments\ExtractOrderTrackingSpreadHandler::class,
+        ],
+    ],
+
     'excluded_groups' => [
         CommentGroups::DELAY,
         CommentGroups::CHAT,
