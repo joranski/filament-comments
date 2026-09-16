@@ -634,6 +634,21 @@ class CommentPanel extends Component implements HasActions, HasForms
         return view('filament-comments::comment-panel');
     }
 
+    /**
+     * Skeleton shown while a `lazy` panel loads. Host apps embed the panel inside
+     * large detail views (order workspaces, customer tabs); deferring it keeps
+     * the thread and rich-text composer out of the parent's render.
+     *
+     * @param  array<string, mixed>  $params
+     */
+    public function placeholder(array $params = []): View
+    {
+        return view('filament-comments::comment-panel-placeholder', [
+            'heading' => $params['heading'] ?? $this->heading,
+            'showHeading' => $params['showHeading'] ?? $this->showHeading,
+        ]);
+    }
+
     protected function applyScopeFilters(Builder|Relation $query): void
     {
         if ($this->group !== null) {
