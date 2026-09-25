@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 use Joranski\FilamentComments\Comments\Livewire\CommentPanel;
-use Joranski\FilamentComments\Comments\Schemas\CommentPanelSchema;
-use Joranski\FilamentComments\Comments\Widgets\CommentsWidget;
+use Joranski\FilamentComments\Filament\Schemas\CommentPanelSchema;
+use Joranski\FilamentComments\Filament\Widgets\CommentsWidget;
 use Joranski\FilamentComments\Support\CommentUi;
 
 test('comment panel accepts compactProfile mount parameter', function (): void {

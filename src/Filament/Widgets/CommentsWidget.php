@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Joranski\FilamentComments\Comments\Widgets;
+namespace Joranski\FilamentComments\Filament\Widgets;
 
 use Filament\Widgets\Widget;
 use Illuminate\Database\Eloquent\Model;

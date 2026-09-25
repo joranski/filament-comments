@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Joranski\FilamentComments\Forms\Components;
+namespace Joranski\FilamentComments\Filament\Forms;
 
 use Filament\Forms\Components\RichEditor;
 

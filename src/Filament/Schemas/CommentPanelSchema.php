@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Joranski\FilamentComments\Comments\Schemas;
+namespace Joranski\FilamentComments\Filament\Schemas;
 
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Group;

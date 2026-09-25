@@ -38,6 +38,18 @@ Built for morphMany `comments()` on any Eloquent record — orders, customers, s
 | Filament | ^5 |
 | Livewire | ^4 |
 
+### Upgrading to 0.5
+
+Filament panel integration moved under `Joranski\FilamentComments\Filament`:
+
+| Before | After |
+|--------|-------|
+| `Comments\Widgets\CommentsWidget` | `Filament\Widgets\CommentsWidget` |
+| `Comments\Schemas\CommentPanelSchema` | `Filament\Schemas\CommentPanelSchema` |
+| `Forms\Components\CommentRichEditor` | `Filament\Forms\CommentRichEditor` |
+
+`CommentPanel` itself is unchanged and still requires Filament.
+
 ---
 
 ## Installation
@@ -107,7 +119,7 @@ Best for record edit screens where comments sit below the main form. Filament pa
 
 ```php
 // app/Filament/Resources/Orders/Pages/EditOrder.php
-use Joranski\FilamentComments\Comments\Widgets\CommentsWidget;
+use Joranski\FilamentComments\Filament\Widgets\CommentsWidget;
 
 protected function getFooterWidgets(): array
 {
@@ -138,7 +150,7 @@ protected function getFooterWidgets(): array
 ```php
 namespace App\Filament\Widgets;
 
-use Joranski\FilamentComments\Comments\Widgets\CommentsWidget as BaseCommentsWidget;
+use Joranski\FilamentComments\Filament\Widgets\CommentsWidget as BaseCommentsWidget;
 
 class OrderCommentsWidget extends BaseCommentsWidget
 {
@@ -155,7 +167,7 @@ class OrderCommentsWidget extends BaseCommentsWidget
 Best when comments should appear inline with other form sections (e.g. Order or Customer edit forms).
 
 ```php
-use Joranski\FilamentComments\Comments\Schemas\CommentPanelSchema;
+use Joranski\FilamentComments\Filament\Schemas\CommentPanelSchema;
 
 public static function configure(Schema $schema): Schema
 {
@@ -227,8 +239,8 @@ Use a **dedicated panel** for a business segment while keeping general comments 
 **Via widget configuration helper:**
 
 ```php
-use Joranski\FilamentComments\Comments\Schemas\CommentPanelSchema;
-use Joranski\FilamentComments\Comments\Widgets\CommentsWidget;
+use Joranski\FilamentComments\Filament\Schemas\CommentPanelSchema;
+use Joranski\FilamentComments\Filament\Widgets\CommentsWidget;
 
 protected function getFooterWidgets(): array
 {
@@ -408,7 +420,7 @@ This is **per-panel** and stacks on top of global Package Settings density toggl
 **Filament widget (fluent on subclass or property bag):**
 
 ```php
-use Joranski\FilamentComments\Comments\Widgets\CommentsWidget;
+use Joranski\FilamentComments\Filament\Widgets\CommentsWidget;
 
 // Filament widget registration (recommended)
 CommentsWidget::make([

@@ -6,7 +6,7 @@ namespace Joranski\FilamentComments\Support;
 
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Textarea;
-use Joranski\FilamentComments\Forms\Components\CommentRichEditor;
+use Joranski\FilamentComments\Filament\Forms\CommentRichEditor;
 
 final class CommentComposerField
 {

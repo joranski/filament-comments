@@ -22,7 +22,7 @@ test('compact profile comment panel resolves rich editor mention search', functi
 
     $body = $panel->getCachedSchemas()['form']->getComponent('body');
 
-    expect($body)->toBeInstanceOf(\Joranski\FilamentComments\Forms\Components\CommentRichEditor::class)
+    expect($body)->toBeInstanceOf(\Joranski\FilamentComments\Filament\Forms\CommentRichEditor::class)
         ->and($body->getMentionSearchResultsForJs(search: 'Jord', char: '@'))
         ->toHaveKey((string) $other->id);
 });
