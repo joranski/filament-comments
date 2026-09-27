@@ -1,6 +1,8 @@
 # joranski/filament-comments
 
-Audit-grade comment panels for Filament: nested threaded replies, inline reply composers, pins, `@mentions` with database notifications, in-panel search, edit timestamps, and delete guards.
+Audit-grade comment panels built on **Livewire + Flux**: nested threaded replies, inline reply composers, pins, `@mentions` with database notifications, file attachments, in-panel search, edit timestamps, and delete guards.
+
+The package has **no Filament dependency**. It embeds in any Livewire/Blade screen — including Filament panels, where the host app owns the Filament glue (widgets, form schemas, settings panels, Filament-format notifications).
 
 Built for morphMany `comments()` on any Eloquent record — orders, customers, service orders, products, etc.
 
@@ -34,21 +36,26 @@ Built for morphMany `comments()` on any Eloquent record — orders, customers, s
 | Dependency | Version |
 |------------|---------|
 | PHP | ^8.3 |
-| Laravel | ^12 |
-| Filament | ^5 |
+| Laravel | ^12 \|\| ^13 |
 | Livewire | ^4 |
+| Flux / Flux Pro | ^2 (`flux:editor` is a Flux Pro component) |
 
-### Upgrading to 0.5
+The host layout must render `<flux:toast />` for panel feedback (the panel dispatches `toast-show`).
 
-Filament panel integration moved under `Joranski\FilamentComments\Filament`:
+### Upgrading from 0.5 (Filament-free)
 
-| Before | After |
-|--------|-------|
-| `Comments\Widgets\CommentsWidget` | `Filament\Widgets\CommentsWidget` |
-| `Comments\Schemas\CommentPanelSchema` | `Filament\Schemas\CommentPanelSchema` |
-| `Forms\Components\CommentRichEditor` | `Filament\Forms\CommentRichEditor` |
-
-`CommentPanel` itself is unchanged and still requires Filament.
+| Removed / changed | Replacement |
+|-------------------|-------------|
+| `Joranski\FilamentComments\Filament\*` (widget, schema, rich editor, settings panel/form) | Moved into the host app (e.g. `App\Filament\Packages\Comments\*`) |
+| `CommentPanel` implemented Filament `HasForms`/`HasActions` with `form()`/`replyForm()`/`editForm()` | Plain Livewire: composers bind to `commentFormData.body`, `replyFormData.body`, `editFormData.body`; uploads to `commentAttachments`, `replyAttachments`, `editAttachments` |
+| `CommentPanel::placeholder()` | Livewire's default lazy placeholder |
+| Filament notifications (`Notification::make()`) in the panel | Flux toasts via `toast-show` |
+| Filament database notifications from the notifiers | `Contracts\SendsCommentNotifications` (default: `Notifications\DatabaseCommentNotificationSender`) — bind your own for a different format |
+| `Contracts\CommentAttachmentHandler::configureRichEditor()/configureRichContentRenderer()` | `store(UploadedFile, context): string` + `url(reference, context): ?string` |
+| `CommentAttachments::configureRichEditor()/configureRichContentRenderer()`, `CommentUi::configureRichEditor()`, `CommentComposerField::bodyField()/createPagePlaceholder()`, `CommentMentionProvider::make()` | Removed (Filament-only). `CommentComposerField::fluxToolbar()` maps the toolbar config to `flux:editor` |
+| Views `components.rich-editor*`, `widgets.comments-widget` | Removed; the composer is `partials.composer` |
+| `joranski/filament-emails` settings-panel registration | Host app registers its own settings panel |
+| `attachments.disk` fallback `filament.default_filesystem_disk` | `filesystems.default` |
 
 ---
 
@@ -111,94 +118,26 @@ The package throws a `RuntimeException` at runtime if model bindings are missing
 
 ## Ways to use comments
 
-There are **four supported integration patterns**. Pick based on where staff should interact with comments.
+`CommentPanel` is a single Livewire component; every integration renders it with different props.
 
-### 1. Footer widget on edit pages (recommended default)
+### 1. Filament panels (host-owned glue)
 
-Best for record edit screens where comments sit below the main form. Filament passes `$record` to footer widgets automatically.
+The package ships no Filament classes. Hosts that want a footer widget, a form-schema embed, or a settings page write thin wrappers that render `CommentPanel` — e.g. a widget whose Blade view is:
 
-```php
-// app/Filament/Resources/Orders/Pages/EditOrder.php
-use Joranski\FilamentComments\Filament\Widgets\CommentsWidget;
-
-protected function getFooterWidgets(): array
-{
-    return [
-        CommentsWidget::class,
-    ];
-}
+```blade
+<x-filament-widgets::widget>
+    @livewire(\Joranski\FilamentComments\Comments\Livewire\CommentPanel::class, [
+        'record' => $record,
+        'heading' => 'Internal notes',
+    ])
+</x-filament-widgets::widget>
 ```
 
-**Customize heading, layout, or scroll height:**
-
-```php
-protected function getFooterWidgets(): array
-{
-    return [
-        CommentsWidget::make([
-            'heading' => 'Internal notes',
-            'layout' => 'full',           // RichEditor (default)
-            'threadMaxHeight' => 800,     // px; null = no cap
-            'excludedGroups' => ['chat', 'delay'],
-        ]),
-    ];
-}
-```
-
-**Subclass for reusable defaults:**
-
-```php
-namespace App\Filament\Widgets;
-
-use Joranski\FilamentComments\Filament\Widgets\CommentsWidget as BaseCommentsWidget;
-
-class OrderCommentsWidget extends BaseCommentsWidget
-{
-    public string $heading = 'Order notes';
-
-    public ?int $threadMaxHeight = 900;
-}
-```
+Filament Blade is fine in **host** views; Flux toasts work inside Filament panels as long as the panel layout renders `<flux:toast />` (e.g. via a `BODY_END` render hook).
 
 ---
 
-### 2. Embedded in a Filament form schema
-
-Best when comments should appear inline with other form sections (e.g. Order or Customer edit forms).
-
-```php
-use Joranski\FilamentComments\Filament\Schemas\CommentPanelSchema;
-
-public static function configure(Schema $schema): Schema
-{
-    return $schema->components([
-        // ...your fields
-        CommentPanelSchema::embeddedForm(),
-    ]);
-}
-```
-
-**Options:**
-
-```php
-CommentPanelSchema::embeddedForm(
-    excludedGroups: ['chat'],  // null = config default
-    heading: 'Comments',
-);
-```
-
-**Create vs edit behavior:**
-
-| Page | What users see |
-|------|----------------|
-| **Edit** | Full `CommentPanel` Livewire component — load thread, add root comments, reply inline, edit, pin, search |
-| **Create** | Dehydrated RichEditor placeholder only (`single_comment`) — comments cannot persist until the parent record is saved |
-
-The create-page placeholder uses the same toolbar as the live panel so the UI feels consistent; it is **not** wired to persistence.
-
----
-
-### 3. Standalone Livewire component
+### 2. Standalone Livewire component
 
 Use anywhere you have a persisted Eloquent `$record` with `comments()`:
 
@@ -212,53 +151,13 @@ Use anywhere you have a persisted Eloquent `$record` with `comments()`:
 />
 ```
 
-**Filament `Livewire::make()` (custom pages, infolists, etc.):**
-
-```php
-use Filament\Schemas\Components\Livewire;
-use Joranski\FilamentComments\Comments\Livewire\CommentPanel;
-
-Livewire::make(
-    component: CommentPanel::class,
-    data: fn (Order $record): array => [
-        'record' => $record,
-        'layout' => 'full',
-        'showHeading' => true,
-    ],
-)->columnSpanFull(),
-```
-
 **Registered alias:** `filament-comments.comment-panel`
 
 ---
 
-### 4. Group- or topic-scoped panel
+### 3. Group- or topic-scoped panel
 
 Use a **dedicated panel** for a business segment while keeping general comments separate. Comments are filtered by `group` and/or `topic` columns.
-
-**Via widget configuration helper:**
-
-```php
-use Joranski\FilamentComments\Filament\Schemas\CommentPanelSchema;
-use Joranski\FilamentComments\Filament\Widgets\CommentsWidget;
-
-protected function getFooterWidgets(): array
-{
-    return [
-        CommentsWidget::make(
-            CommentPanelSchema::widgetConfiguration(
-                group: 'delay',
-                topic: 'shipping',
-                layout: 'compact',
-                heading: 'Delay notes',
-                threadMaxHeight: 600,
-            ),
-        ),
-    ];
-}
-```
-
-**Direct Livewire props:**
 
 ```blade
 <livewire:filament-comments.comment-panel
@@ -300,7 +199,7 @@ return [
         'search' => true,
         'edit' => true,
         'reply_notifications' => true,
-        'attachments' => false,   // RichEditor file uploads (see File attachments)
+        'attachments' => false,   // Composer file uploads (see File attachments)
     ],
 
     // Pluggable attachment handler + storage (see File attachments)
@@ -315,7 +214,7 @@ return [
         'deduplicate' => false,
     ],
 
-    // RichEditor toolbar button groups (see File attachments)
+    // Editor toolbar button groups, mapped to flux:editor items (see Editor toolbar)
     'rich_editor' => [
         'toolbar_buttons' => [
             ['bold', 'italic', 'underline', 'strike'],
@@ -368,22 +267,27 @@ return [
         'author_may_delete_own' => true,
     ],
 
-    // Filament edit URLs for @mention / reply notification "View" links
+    // Deep links for @mention / reply notification "View" links
     'commentable_urls' => [
         \App\Models\Order::class => fn (\App\Models\Order $record): string =>
-            \App\Filament\Resources\OrderResource::getUrl('edit', ['record' => $record]),
+            route('orders.show', $record),
+    ],
+
+    // Database notifications
+    'notifications' => [
+        'notify_self_mentions' => false,
     ],
 ];
 ```
 
 ### Per-panel property overrides
 
-Pass to `CommentsWidget::make([...])` or the Livewire component:
+Pass to the Livewire component:
 
 | Property | Default | Description |
 |----------|---------|-------------|
 | `record` | null | Commentable Eloquent model (required for persistence) |
-| `layout` | `full` | `full` = RichEditor; `compact` = Textarea |
+| `layout` | `full` | `full` = `flux:editor`; `compact` = `flux:textarea` |
 | `group` | null | Scope to one group |
 | `topic` | null | Scope to one topic |
 | `excludeGroup` | null | Exclude one group (legacy) |
@@ -406,8 +310,10 @@ Pass to `CommentsWidget::make([...])` or the Livewire component:
 
 | Layout | Composer | Mentions |
 |--------|----------|----------|
-| `full` | Filament RichEditor with configurable toolbar | Filament native mention dropdown (`@` trigger) |
-| `compact` | Textarea | Alpine popup autocomplete (↑/↓/Enter/Escape) |
+| `full` | `flux:editor` with configurable toolbar | Alpine dropdown on the editor (`@` trigger, ↑/↓/Enter/Tab/Escape) inserting plain `@Name` text |
+| `compact` | `flux:textarea` | Alpine popup autocomplete (↑/↓/Enter/Escape) |
+
+Both mention UIs call the panel's `searchMentionUsers()`; `CommentMentionParser` resolves `@Name` text to user ids on save.
 
 > **Note:** `layout="compact"` switches the **composer control** to a textarea. It is unrelated to the condensed UI profile below.
 
@@ -417,23 +323,6 @@ Use **`->compact()`** when embedding comments in a narrow sidebar or multi-colum
 
 This is **per-panel** and stacks on top of global Package Settings density toggles (when `compactProfile` is true, compact toolbar + action icons are forced for that panel).
 
-**Filament widget (fluent on subclass or property bag):**
-
-```php
-use Joranski\FilamentComments\Filament\Widgets\CommentsWidget;
-
-// Filament widget registration (recommended)
-CommentsWidget::make([
-    'record' => $order,
-    'compactProfile' => true,
-]);
-
-// Or on a custom widget subclass in mount():
-$this->compact();
-```
-
-**Livewire / Blade:**
-
 ```blade
 @livewire(\Joranski\FilamentComments\Comments\Livewire\CommentPanel::class, [
     'record' => $order,
@@ -441,25 +330,9 @@ $this->compact();
 ])
 ```
 
-**Embedded resource form:**
-
-```php
-CommentPanelSchema::embeddedForm(compact: true);
-```
-
-**Widget configuration helper:**
-
-```php
-CommentPanelSchema::widgetConfiguration(
-    heading: 'Conversation',
-    threadMaxHeight: 480,
-    compact: true,
-);
-```
-
 | What shrinks | Default | With `->compact()` |
 |--------------|---------|-------------------|
-| RichEditor toolbar buttons | normal | smaller |
+| Editor toolbar buttons | normal | smaller |
 | Pin / reply / edit / delete icons | `sm` | `xs` |
 | Root avatars | `sm` | `xs` |
 | Author / timestamp text | `sm` | `xs`–`sm` |
@@ -472,7 +345,7 @@ CommentPanelSchema::widgetConfiguration(
 | Action | Where the editor appears |
 |--------|--------------------------|
 | New root comment | Top of panel (always) |
-| Reply | Inline RichEditor/textarea **directly under** the target comment; auto-scrolls into view |
+| Reply | Inline editor/textarea **directly under** the target comment; auto-scrolls into view |
 | Edit | Inline under the comment being edited |
 
 The top composer is **root-only**. Replies never hijack the top field.
@@ -483,13 +356,15 @@ Shared toolbar defaults are defined in `config/filament-comments.php` under `ric
 
 ## File attachments
 
-Enable RichEditor file uploads on comment composers (`full` layout only):
+Enable file uploads on comment composers (root, reply and edit):
 
 ```php
 'features' => [
     'attachments' => true,
 ],
 ```
+
+Each composer renders a `flux:file-upload` dropzone bound to a Livewire upload property (`commentAttachments`, `replyAttachments`, `editAttachments`). On submit, files are validated (`CommentAttachments::fileRules()`, max 10 per comment), stored through the configured handler, and appended to the comment body as `<img>` nodes — non-image files are then rendered as download cards. While editing, existing attachments are listed as removable badges beside the editor (`flux:editor` does not hold images) and re-appended on save.
 
 ### Supported file types
 
@@ -500,11 +375,28 @@ When `attachments.accepted_file_types` is **`null`** (default), the package acce
 - Word / Excel / PowerPoint (legacy and OpenXML MIME types)
 - CSV and plain text
 
-Set an explicit array to restrict types, or `[]` to allow all types Filament RichEditor supports.
+Set an explicit array to restrict types, or `[]` to allow any file type.
 
 ### Storage handlers
 
 Implement `Joranski\FilamentComments\Contracts\CommentAttachmentHandler` for custom storage (e.g. Spatie Media Library on the commentable model):
+
+```php
+interface CommentAttachmentHandler
+{
+    public function isEnabled(CommentAttachmentContext $context): bool;
+
+    /** Store the upload and return a reference (public URL or disk path). */
+    public function store(UploadedFile $file, CommentAttachmentContext $context): string;
+
+    /** Resolve a stored reference to a URL. */
+    public function url(string $reference, CommentAttachmentContext $context): ?string;
+
+    public function afterCommentSaved(Model $comment, CommentAttachmentContext $context): void;
+
+    public function beforeCommentDeleted(Model $comment): void;
+}
+```
 
 ```php
 'attachments' => [
@@ -517,9 +409,9 @@ Implement `Joranski\FilamentComments\Contracts\CommentAttachmentHandler` for cus
 
 The default handler stores files on a Laravel disk (`attachments.disk`, default filesystem disk).
 
-### RichEditor toolbar
+### Editor toolbar
 
-Configure toolbar button groups in config ([Filament docs](https://filamentphp.com/docs/forms/rich-editor#customizing-the-toolbar-buttons)):
+Configure toolbar button groups in config. `CommentComposerField::fluxToolbar()` maps them to [`flux:editor`](https://fluxui.dev/components/editor) items (`codeBlock` → `code`, `bulletList` → `bullet`, `orderedList` → `ordered`, `h1`–`h3` → `heading`, …); unknown names and `attachFiles` are dropped from the editor toolbar. `toolbarButtons()` still returns the raw groups for hosts that build their own editors:
 
 ```php
 'rich_editor' => [
@@ -538,11 +430,11 @@ Set `append_attach_files_when_enabled` to `false` if you place `attachFiles` man
 
 `CommentBodyValidator` treats comments with embedded files as valid even when plain text is shorter than two characters — so staff can post a PDF or image without typing a message.
 
-Detection covers `<img>`, media tags, linked documents (`.pdf`, `.docx`, `.xlsx`, `.csv`, etc.), and RichEditor `contentType` metadata. Use `CommentBodyValidator::containsDocument($html)` in app code or lifecycle hooks.
+Detection covers `<img>`, media tags, linked documents (`.pdf`, `.docx`, `.xlsx`, `.csv`, etc.), and legacy rich-editor `contentType` metadata. Use `CommentBodyValidator::containsDocument($html)` in app code or lifecycle hooks.
 
-**Livewire preview MIME types:** Filament's `attachFiles` modal calls Livewire's `temporaryUrl()` before persisting. PDF and Office uploads require those extensions in `config/livewire.php` → `temporary_file_upload.preview_mimes`. When `features.attachments` is enabled, this package merges document extensions automatically (`attachments.ensure_livewire_preview_mimes`, default `true`).
+**Livewire preview MIME types:** Livewire's `temporaryUrl()` needs document extensions in `config/livewire.php` → `temporary_file_upload.preview_mimes`. When `features.attachments` is enabled, this package merges them automatically (`attachments.ensure_livewire_preview_mimes`, default `true`).
 
-**Comment display:** Filament stores all RichEditor attachments as `<img>` nodes, but browsers cannot render PDFs/Office files as images. This package transforms non-image attachments into styled download links when saving and when rendering comments (`CommentAttachmentHtmlTransformer`).
+**Comment display:** attachments are stored as `<img>` nodes, but browsers cannot render PDFs/Office files as images. `CommentAttachmentHtmlTransformer` turns non-image attachments into styled download links (labelled with the original file name) when saving and when rendering comments.
 
 ```php
 // config/livewire.php
@@ -598,7 +490,7 @@ return CommentLifecycleResult::defer(
 );
 ```
 
-When a hook returns `defer()`, `CommentPanel` sets `showLifecyclePrompt` and includes the view from `lifecycle.defer_prompts[$deferKey]`. The panel **teleports defer prompt views to `body`** so they stack above sibling widgets (e.g. footer panels). Use Filament modal classes (`fi-modal`, `fi-modal-close-overlay`, `fi-modal-window-ctn`) in your prompt Blade. Wire your modal to:
+When a hook returns `defer()`, `CommentPanel` sets `showLifecyclePrompt` and includes the view from `lifecycle.defer_prompts[$deferKey]`. The panel **teleports defer prompt views to `body`** so they stack above sibling widgets (e.g. footer panels). Build the prompt with any modal markup (e.g. a Flux modal) in your prompt Blade. Wire your modal to:
 
 - `wire:click="confirmDeferredComment({ send_document_email: true })"` — finalize with metadata passed to `afterCreate`
 - `wire:click="confirmDeferredComment({ send_document_email: false })"` — finalize without side effects
@@ -670,7 +562,7 @@ CommentGroups::STATE_PROMOTED;  // 'promoted' (chat → audit bridge)
 ```php
 return [
     LiveChatWidget::class,    // group = chat (ephemeral coordination)
-    CommentsWidget::class,    // audit trail; excludes chat + delay
+    CommentsWidget::class,    // host widget wrapping CommentPanel; excludes chat + delay
     DelayWidget::class,       // host-specific; group = delay, per-topic
 ];
 ```
@@ -855,24 +747,17 @@ The package **does not** require `filament-shield` or `spatie/laravel-permission
 
 ## Package settings export
 
-When [`joranski/filament-emails`](https://github.com/joranski/filament-emails) is installed, this package registers **`CommentsSettingsPanel`** on the shared **`FilamentPackageSettingsRegistry`**. The host app's master **Package Settings** page picks up a **Comments** tab automatically — same pattern as Email and SMS settings.
+Settings live in one `filament_comments_settings` row, read through `Services\FilamentCommentsSettings` (the cache holds only the row id, so it works with `cache.serializable_classes = false`). The package ships no settings UI; host apps build their own form (Filament panel, Livewire page, …) and persist with `FilamentCommentsSettings::update()`.
 
 | Setting | Purpose |
 |---------|---------|
-| **Compact RichEditor toolbar** | Smaller formatting buttons on root/reply/edit composers |
+| **Compact editor toolbar** | Smaller formatting buttons on root/reply/edit composers |
 | **Compact thread action icons** | Smaller pin, reply, edit, and delete Flux buttons |
 | **Enable AI proofread** | Shows a proofread toggle on the root composer when AI is enabled in `.env` |
 | **Proofread toggle default ON** | Default state of the proofread switch |
 | **Enable thread summarization** | Reserved for a future “Summarize thread” panel action |
 
-```php
-use Joranski\FilamentComments\Filament\Settings\CommentsSettingsPanel;
-
-CommentsSettingsPanel::embedSection(statePath: 'commentsSettings');
-// defaultState() + save($state) for persistence
-```
-
-Configure export roles in `config/filament-comments.php` under `settings.export.roles` (default: `super_admin`, `admin`).
+Gate settings screens with `Support\CommentSettingsAuthorization::canManage($user)`. It checks the **role names** in `settings.export.roles` (default: `super_admin`, `admin`) via `hasAnyRole()` (e.g. Spatie Permission); with an empty role list, or a user model without `hasAnyRole()`, it falls back to `CommentAuthorization::canViewAny()`.
 
 Optional `.env` defaults before the first DB row:
 
@@ -918,10 +803,25 @@ Root comments only. Pinned sort first, then by latest.
 
 ### @Mentions
 
-- **`full` layout:** Filament RichEditor mention provider; type `@` after whitespace.
+- **`full` layout:** `flux:editor` + Alpine dropdown; type `@` after whitespace.
 - **`compact` layout:** Textarea + Alpine popup (↑/↓/Enter/Escape).
-- On save: `mentioned_user_ids` populated; Filament DB notifications sent.
+- On save: `mentioned_user_ids` populated; notifications sent through `SendsCommentNotifications`.
+- Authors are not notified of their own mentions unless `notifications.notify_self_mentions` is true.
 - Configure **`commentable_urls`** for working "View" links.
+
+### Notifications
+
+Mention and reply notifiers build a `Support\CommentNotificationMessage` (kind, title, inline-markdown body, URL, comment, commentable, author) and hand it to the bound `Contracts\SendsCommentNotifications`. The default `Notifications\DatabaseCommentNotificationSender` stores a plain Laravel database notification:
+
+```php
+['format' => 'filament-comments', 'kind' => 'mention', 'title' => '…', 'body' => '<strong>…</strong> …', 'url' => '…', 'comment_id' => 1, 'commentable_type' => '…', 'commentable_id' => 1, 'author_id' => 1]
+```
+
+Bind your own sender to use another format (e.g. a Filament database-notification bell in the host app):
+
+```php
+$this->app->bind(SendsCommentNotifications::class, App\Notifications\MyCommentNotificationSender::class);
+```
 
 ### Search
 
@@ -948,13 +848,13 @@ Requires a Livewire parent with `deleteComment()` (e.g. custom widget).
 
 ### Disable features on one panel
 
-```php
-CommentsWidget::make([
-    'record' => $record,
-    'allowPins' => false,
-    'allowMentions' => false,
-    'allowSearch' => false,
-]),
+```blade
+<livewire:filament-comments.comment-panel
+    :record="$record"
+    :allow-pins="false"
+    :allow-mentions="false"
+    :allow-search="false"
+/>
 ```
 
 ### Override views
@@ -965,18 +865,21 @@ Publish then edit under `resources/views/vendor/filament-comments/`:
 |---------|---------|
 | `comment-panel.blade.php` | Panel shell |
 | `partials/list-item.blade.php` | Single comment row |
+| `partials/composer.blade.php` | Shared root/reply/edit composer (`flux:editor` / `flux:textarea` + `flux:file-upload`) |
 | `partials/list-item-reply-form.blade.php` | Inline reply composer |
 | `partials/thread-item.blade.php` | Root + reply tree |
 | `partials/reply-nest.blade.php` | Nested reply branch |
 | `components/mention-autocomplete.blade.php` | Compact mention popup |
+| `components/editor-mentions.blade.php` | `flux:editor` mention dropdown |
 
 ### Programmatic helpers
 
 | Class | Purpose |
 |-------|---------|
-| `CommentComposerField` | Shared RichEditor/textarea definitions + toolbar from config |
+| `CommentComposerField` | Toolbar groups from config, `fluxToolbar()` mapping, textarea rows |
 | `CommentBodyValidator` | Min-length rules; attachment/document detection |
-| `CommentAttachments` | Feature flag + handler resolution |
+| `CommentAttachments` | Feature flag, handler resolution, upload rules, `storeAsHtml()` |
+| `CommentBodyAttachments` | Split/append attachment markup around editable text |
 | `CommentLifecycle` | Dispatches configured lifecycle hooks |
 | `CommentAttachmentDefaults` | Default MIME types + toolbar button groups |
 | `CommentThreadDepth` | Depth limits + CSS indent helpers |
@@ -1005,27 +908,24 @@ Keep **`chat`** in `excluded_groups` on the audit `CommentsWidget` so live chat 
 | `@Name` not detected | User `name` must match (case-insensitive) |
 | Reply button missing | Check `max_reply_depth` or `allowReplies` |
 | Top composer still used for replies | Upgrade package — replies use inline composer |
-| Attach button missing | Set `features.attachments` true; use `layout="full"` |
+| Upload dropzone missing | Set `features.attachments` true and bind an enabled handler |
+| No toast after saving | Render `<flux:toast />` in the layout |
 | PDF/doc rejected on upload | Check `attachments.accepted_file_types`; null uses document defaults |
 | `FileNotPreviewableException` for PDF | Add document extensions to `livewire.temporary_file_upload.preview_mimes`, or keep `attachments.ensure_livewire_preview_mimes` true (default) |
 | Broken PDF icon in comment thread | Upgrade to v0.3.3+ — document attachments render as download links, not `<img>` tags |
 | Comment deferred but no modal | Register `lifecycle.defer_prompts` key matching hook `deferKey` |
-| `mountAction` not found on attach | Ensure CommentPanel uses `InteractsWithActions` (v0.2.1+) |
 
 ---
 
 ## Testing
 
-**Package** (authorization, threading, mentions, model, migrations):
+**Package** (Livewire panel UI, attachments, notifications, settings, authorization, threading, mentions, model, migrations, and an architecture test that keeps `src`, `resources` and `config` Filament-free):
 
 ```bash
 cd path/to/filament-comments && composer test
 ```
 
-**Host app** (Filament Livewire UI integration — CommentPanel, CommentsWidget, app-specific rating UI):
-
-- Keep Pest feature tests under `tests/Feature/Filament/CommentPanelTest.php` in the consuming app
-- See `tests/Feature/CommentPanelIntegration.md` in the package for why full UI tests run in the host
+**Host app:** test your Filament wrappers (widgets, schemas, settings panels, notification sender) and app-specific behaviour in the consuming app.
 
 ---
 

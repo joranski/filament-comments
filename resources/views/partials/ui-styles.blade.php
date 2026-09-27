@@ -6,16 +6,19 @@
 
 @if (CommentUi::compactToolbar($uiContext))
     <style>
-        .fi-comments-ui-compact-toolbar .fi-fo-rich-editor-toolbar .fi-btn,
-        .fi-comments-ui-compact-toolbar .fi-fo-rich-editor-toolbar button {
-            min-height: 1.75rem;
-            min-width: 1.75rem;
-            height: 1.75rem;
-            width: 1.75rem;
+        .fi-comments-ui-compact-toolbar .fi-comments-editor ui-toolbar > div {
+            height: 2rem;
             padding: 0.25rem;
+            gap: 0.25rem;
         }
 
-        .fi-comments-ui-compact-toolbar .fi-fo-rich-editor-toolbar .fi-icon {
+        .fi-comments-ui-compact-toolbar .fi-comments-editor ui-toolbar button {
+            height: 1.5rem;
+            min-width: 1.5rem;
+            padding: 0.125rem;
+        }
+
+        .fi-comments-ui-compact-toolbar .fi-comments-editor ui-toolbar [data-flux-icon] {
             width: 0.875rem;
             height: 0.875rem;
         }
@@ -31,25 +34,12 @@
     </style>
 @endif
 
-@if ($this->allowMentions && $this->usesRichEditor())
+@if ($this->allowMentions)
     <style>
         .fi-comments-mention-dropdown {
             position: fixed !important;
             z-index: 2147483000 !important;
             pointer-events: auto !important;
-        }
-
-        /*
-         * Filament's RichEditor mention suggestion may still mount an empty
-         * body-level panel ("No results found") above our bridge — keep it below.
-         */
-        body > .fi-dropdown-panel.fi-scrollable:not(:has(.fi-dropdown-list-item)) {
-            z-index: 40 !important;
-        }
-
-        body:has(.fi-comments-mention-dropdown[style*='display: block']) > .fi-dropdown-panel.fi-scrollable {
-            visibility: hidden !important;
-            pointer-events: none !important;
         }
     </style>
 @endif

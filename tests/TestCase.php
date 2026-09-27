@@ -4,17 +4,10 @@ declare(strict_types=1);
 
 namespace Joranski\FilamentComments\Tests;
 
-use Filament\Facades\Filament;
-use Filament\FilamentServiceProvider;
-use Filament\Forms\FormsServiceProvider;
-use Filament\Notifications\NotificationsServiceProvider;
-use Filament\Panel;
-use Filament\Schemas\SchemasServiceProvider;
-use Filament\Support\SupportServiceProvider;
-use Filament\Widgets\WidgetsServiceProvider;
+use Flux\FluxServiceProvider;
+use FluxPro\FluxProServiceProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Joranski\FilamentComments\FilamentCommentsServiceProvider;
-use Flux\FluxServiceProvider;
 use Joranski\FilamentComments\Tests\Support\EnsureErrorBagHook;
 use Livewire\Livewire;
 use Livewire\LivewireServiceProvider;
@@ -29,19 +22,9 @@ abstract class TestCase extends Orchestra
         $providers = [
             LivewireServiceProvider::class,
             FluxServiceProvider::class,
-            SupportServiceProvider::class,
-            SchemasServiceProvider::class,
-            FormsServiceProvider::class,
-            NotificationsServiceProvider::class,
-            FilamentServiceProvider::class,
-            WidgetsServiceProvider::class,
+            FluxProServiceProvider::class,
+            FilamentCommentsServiceProvider::class,
         ];
-
-        if (class_exists(\Joranski\FilamentEmails\FilamentEmailsServiceProvider::class)) {
-            $providers[] = \Joranski\FilamentEmails\FilamentEmailsServiceProvider::class;
-        }
-
-        $providers[] = FilamentCommentsServiceProvider::class;
 
         if (class_exists(\Spatie\Permission\PermissionServiceProvider::class)) {
             $providers[] = \Spatie\Permission\PermissionServiceProvider::class;
@@ -87,16 +70,6 @@ abstract class TestCase extends Orchestra
         parent::setUp();
 
         require_once __DIR__.'/Support/Models.php';
-
-        Filament::registerPanel(
-            Panel::make()
-                ->id('testing')
-                ->path('testing'),
-        );
-
-        Filament::setCurrentPanel(Filament::getPanel('testing'));
-
-        $this->app['view']->prependNamespace('filament-comments', __DIR__.'/views');
 
         Livewire::componentHook(EnsureErrorBagHook::class);
 

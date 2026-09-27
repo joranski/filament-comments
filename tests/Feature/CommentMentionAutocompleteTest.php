@@ -17,17 +17,16 @@ test('mention provider search excludes the authenticated user', function (): voi
         ->and($results)->not->toHaveKey($current->id);
 });
 
-test('mention provider seeds initial users for rich editor dropdown', function (): void {
+test('mention provider seeds initial users for the editor dropdown', function (): void {
     $current = \User::factory()->create(['name' => 'Current User']);
     $other = \User::factory()->create(['name' => 'Other User']);
 
     $this->actingAs($current);
 
-    $provider = CommentMentionProvider::make();
+    $results = CommentMentionProvider::searchForAutocomplete(search: '');
 
-    expect($provider->getItems())->toHaveKey((string) $other->id)
-        ->and($provider->getItems())->not->toHaveKey((string) $current->id)
-        ->and($provider->getSearchResults(search: ''))->toHaveKey((string) $other->id);
+    expect($results)->toContain(['id' => $other->id, 'name' => 'Other User'])
+        ->and(array_column($results, 'id'))->not->toContain($current->id);
 });
 
 test('mention provider filters users as the query grows', function (): void {

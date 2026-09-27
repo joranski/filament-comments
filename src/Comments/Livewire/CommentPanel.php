@@ -4,45 +4,49 @@ declare(strict_types=1);
 
 namespace Joranski\FilamentComments\Comments\Livewire;
 
-use Filament\Actions\Concerns\InteractsWithActions;
-use Filament\Actions\Contracts\HasActions;
-use Filament\Forms\Components\RichEditor;
-use Filament\Forms\Components\RichEditor\RichContentRenderer;
-use Filament\Forms\Components\Textarea;
-use Filament\Forms\Concerns\InteractsWithForms;
-use Filament\Forms\Contracts\HasForms;
-use Filament\Notifications\Notification;
-use Filament\Schemas\Schema;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Joranski\FilamentComments\Concerns\InteractsWithCommentMentionAutocomplete;
+use Joranski\FilamentComments\Services\CommentAiProcessor;
 use Joranski\FilamentComments\Support\CommentAttachmentContext;
-use Joranski\FilamentComments\Support\CommentAttachments;
 use Joranski\FilamentComments\Support\CommentAttachmentHtmlTransformer;
+use Joranski\FilamentComments\Support\CommentAttachments;
 use Joranski\FilamentComments\Support\CommentAuthor;
-use Joranski\FilamentComments\Support\CommentBodyValidator;
 use Joranski\FilamentComments\Support\CommentAuthorization;
+use Joranski\FilamentComments\Support\CommentBodyAttachments;
+use Joranski\FilamentComments\Support\CommentBodyValidator;
 use Joranski\FilamentComments\Support\CommentComposerField;
 use Joranski\FilamentComments\Support\CommentContentRenderer;
 use Joranski\FilamentComments\Support\CommentLifecycle;
 use Joranski\FilamentComments\Support\CommentLifecycleEvent;
 use Joranski\FilamentComments\Support\CommentMentionNotifier;
 use Joranski\FilamentComments\Support\CommentMentionParser;
-use Joranski\FilamentComments\Support\CommentMentionProvider;
 use Joranski\FilamentComments\Support\CommentReplyNotifier;
 use Joranski\FilamentComments\Support\CommentThreadDepth;
-use Joranski\FilamentComments\Services\CommentAiProcessor;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
-class CommentPanel extends Component implements HasActions, HasForms
+/**
+ * Comment thread + composer for any model using {@see \Joranski\FilamentComments\Concerns\HasComments}.
+ *
+ * Pure Livewire + Flux: the composers are `flux:editor` (full layout) or `flux:textarea`
+ * (compact layout) bound to plain array properties, attachments are Livewire uploads
+ * stored through the configured {@see \Joranski\FilamentComments\Contracts\CommentAttachmentHandler}.
+ * Embed with `<livewire:filament-comments.comment-panel :record="$model" />`.
+ */
+class CommentPanel extends Component
 {
-    use InteractsWithActions;
     use InteractsWithCommentMentionAutocomplete;
-    use InteractsWithForms;
+    use WithFileUploads;
+
+    public const int MAX_BODY_LENGTH = 65000;
+
+    public const int MAX_ATTACHMENTS = 10;
 
     public ?Model $record = null;
 
@@ -83,20 +87,37 @@ class CommentPanel extends Component implements HasActions, HasForms
 
     public ?int $editingCommentId = null;
 
-    /** @var array<string, mixed> */
+    /** @var array{body: ?string} */
     public array $commentFormData = [
         'body' => null,
     ];
 
-    /** @var array<string, mixed> */
+    /** @var array{body: ?string} */
     public array $replyFormData = [
         'body' => null,
     ];
 
-    /** @var array<string, mixed> */
+    /** @var array{body: ?string} */
     public array $editFormData = [
         'body' => null,
     ];
+
+    /** @var array<int, mixed> Livewire temporary uploads queued on the root composer. */
+    public array $commentAttachments = [];
+
+    /** @var array<int, mixed> */
+    public array $replyAttachments = [];
+
+    /** @var array<int, mixed> */
+    public array $editAttachments = [];
+
+    /**
+     * Attachment markup already stored on the comment being edited; kept beside the
+     * editor (which has no image node) and re-appended on save.
+     *
+     * @var list<string>
+     */
+    public array $editExistingAttachments = [];
 
     public bool $showLifecyclePrompt = false;
 
@@ -152,9 +173,6 @@ class CommentPanel extends Component implements HasActions, HasForms
         $processor = app(CommentAiProcessor::class);
         $this->proofreadWithAi = $processor->showsProofreadToggle()
             && $processor->defaultProofreadToggle();
-
-        $this->form->fill(['body' => null]);
-        $this->replyForm->fill(['body' => null]);
     }
 
     /**
@@ -212,74 +230,6 @@ class CommentPanel extends Component implements HasActions, HasForms
         return app(CommentAiProcessor::class)->showsProofreadToggle();
     }
 
-    public function form(Schema $schema): Schema
-    {
-        return $this->bodyFormSchema(
-            schema: $schema,
-            statePath: 'commentFormData',
-            placeholder: $this->rootComposerPlaceholder(),
-        );
-    }
-
-    public function replyForm(Schema $schema): Schema
-    {
-        return $this->bodyFormSchema(
-            schema: $schema,
-            statePath: 'replyFormData',
-            placeholder: $this->replyComposerPlaceholder(),
-        );
-    }
-
-    public function editForm(Schema $schema): Schema
-    {
-        return $this->bodyFormSchema(
-            schema: $schema,
-            statePath: 'editFormData',
-        );
-    }
-
-    protected function bodyFormSchema(Schema $schema, string $statePath, ?string $placeholder = null): Schema
-    {
-        $composer = match ($statePath) {
-            'replyFormData' => 'reply',
-            'editFormData' => 'edit',
-            default => 'root',
-        };
-
-        $context = $this->attachmentContext(composer: $composer);
-
-        $editor = CommentComposerField::bodyField(
-            useRichEditor: $this->usesRichEditor(),
-            layout: $this->layout,
-            placeholder: $placeholder,
-            context: $context,
-            compactProfile: $this->uiCompactProfileContext(),
-        );
-
-        $editor = $this->configureMentions($editor);
-
-        return $schema
-            ->components([$editor->columnSpanFull()])
-            ->statePath($statePath);
-    }
-
-    protected function attachmentContext(string $composer): CommentAttachmentContext
-    {
-        $comment = null;
-
-        if ($composer === 'edit' && $this->editingCommentId !== null) {
-            $comment = $this->findScopedComment($this->editingCommentId);
-        }
-
-        return new CommentAttachmentContext(
-            commentable: $this->record,
-            comment: $comment instanceof Model ? $comment : null,
-            group: $this->group,
-            topic: $this->topic,
-            composer: $composer,
-        );
-    }
-
     #[Computed]
     public function comments(): Collection
     {
@@ -314,7 +264,7 @@ class CommentPanel extends Component implements HasActions, HasForms
     public function addComment(): void
     {
         $comment = $this->createComment(
-            rawBody: $this->form->getState()['body'] ?? null,
+            rawBody: $this->commentFormData['body'] ?? null,
             parentId: null,
         );
 
@@ -324,10 +274,7 @@ class CommentPanel extends Component implements HasActions, HasForms
 
         $this->resetRootComposer();
 
-        Notification::make()
-            ->title(__('Comment added.'))
-            ->success()
-            ->send();
+        $this->toast(heading: __('Comment added.'));
     }
 
     public function confirmDeferredComment(array $metadata = []): void
@@ -368,7 +315,7 @@ class CommentPanel extends Component implements HasActions, HasForms
         }
 
         $comment = $this->createComment(
-            rawBody: $this->replyForm->getState()['body'] ?? null,
+            rawBody: $this->replyFormData['body'] ?? null,
             parentId: $this->replyingToCommentId,
         );
 
@@ -378,10 +325,7 @@ class CommentPanel extends Component implements HasActions, HasForms
 
         $this->cancelReply();
 
-        Notification::make()
-            ->title(__('Reply added.'))
-            ->success()
-            ->send();
+        $this->toast(heading: __('Reply added.'));
     }
 
     public function startReply(int $commentId): void
@@ -398,13 +342,17 @@ class CommentPanel extends Component implements HasActions, HasForms
 
         $this->cancelEdit();
         $this->replyingToCommentId = $comment->id;
-        $this->replyForm->fill(['body' => null]);
+        $this->replyFormData = ['body' => null];
+        $this->replyAttachments = [];
+        $this->resetValidation(['replyFormData.body', 'replyAttachments', 'replyAttachments.*']);
     }
 
     public function cancelReply(): void
     {
         $this->replyingToCommentId = null;
-        $this->replyForm->fill(['body' => null]);
+        $this->replyFormData = ['body' => null];
+        $this->replyAttachments = [];
+        $this->resetValidation(['replyFormData.body', 'replyAttachments', 'replyAttachments.*']);
     }
 
     public function startEdit(int $commentId): void
@@ -420,14 +368,40 @@ class CommentPanel extends Component implements HasActions, HasForms
         }
 
         $this->cancelReply();
+
+        $parts = CommentBodyAttachments::split(html: (string) ($comment->comment ?? ''));
+
         $this->editingCommentId = $comment->id;
-        $this->editForm->fill(['body' => $comment->comment]);
+        $this->editFormData = ['body' => $parts['body']];
+        $this->editExistingAttachments = $parts['attachments'];
+        $this->editAttachments = [];
+        $this->resetValidation(['editFormData.body', 'editAttachments', 'editAttachments.*']);
     }
 
     public function cancelEdit(): void
     {
         $this->editingCommentId = null;
-        $this->editForm->fill(['body' => null]);
+        $this->editFormData = ['body' => null];
+        $this->editExistingAttachments = [];
+        $this->editAttachments = [];
+        $this->resetValidation(['editFormData.body', 'editAttachments', 'editAttachments.*']);
+    }
+
+    public function removeExistingAttachment(int $index): void
+    {
+        unset($this->editExistingAttachments[$index]);
+
+        $this->editExistingAttachments = array_values($this->editExistingAttachments);
+    }
+
+    public function removeUpload(string $composer, int $index): void
+    {
+        $property = $this->attachmentProperty(composer: $composer);
+        $uploads = $this->{$property};
+
+        unset($uploads[$index]);
+
+        $this->{$property} = array_values($uploads);
     }
 
     public function saveEdit(): void
@@ -442,16 +416,20 @@ class CommentPanel extends Component implements HasActions, HasForms
             return;
         }
 
-        $body = $this->normalizeBody($this->editForm->getState()['body'] ?? null);
-        $body = $this->applyAiProofread(body: $body, composer: 'edit');
+        $this->validate($this->composerRules(composer: 'edit'), attributes: $this->composerValidationAttributes(composer: 'edit'));
 
-        if (! $this->isValidBody($body)) {
-            $this->notifyInvalidBody();
+        $body = $this->normalizeBody($this->editFormData['body'] ?? null);
+        $body = $this->applyAiProofread(body: $body, composer: 'edit');
+        $body = CommentBodyAttachments::append(body: $body, attachments: $this->editExistingAttachments);
+
+        if (! $this->isValidBody($body) && ! $this->hasQueuedAttachments(composer: 'edit')) {
+            $this->notifyInvalidBody(composer: 'edit');
 
             return;
         }
 
         $context = $this->attachmentContext(composer: 'edit');
+        $body = $this->appendQueuedAttachments(body: $body, composer: 'edit', context: $context);
 
         $beforeResult = CommentLifecycle::beforeUpdate(new CommentLifecycleEvent(
             commentable: $this->record,
@@ -487,41 +465,6 @@ class CommentPanel extends Component implements HasActions, HasForms
         );
     }
 
-    protected function persistUpdatedComment(
-        Model $comment,
-        string $body,
-        CommentAttachmentContext $context,
-        array $metadata = [],
-    ): void {
-        $comment->update(
-            $this->commentAttributes(body: $body, parentId: $comment->parent_id, isEdit: true),
-        );
-
-        $comment = $comment->fresh();
-
-        $this->afterCommentSaved(
-            comment: $comment,
-            context: $context,
-        );
-
-        CommentLifecycle::afterUpdate(new CommentLifecycleEvent(
-            commentable: $this->record,
-            body: $body,
-            context: $context,
-            comment: $comment,
-            parentId: $comment->parent_id,
-            metadata: $metadata,
-        ));
-
-        $this->cancelEdit();
-        unset($this->comments);
-
-        Notification::make()
-            ->title(__('Comment updated.'))
-            ->success()
-            ->send();
-    }
-
     public function togglePin(int $commentId): void
     {
         if (! $this->allowPins) {
@@ -540,10 +483,7 @@ class CommentPanel extends Component implements HasActions, HasForms
 
         unset($this->comments);
 
-        Notification::make()
-            ->title($comment->is_pinned ? __('Comment pinned.') : __('Comment unpinned.'))
-            ->success()
-            ->send();
+        $this->toast(heading: $comment->is_pinned ? __('Comment pinned.') : __('Comment unpinned.'));
     }
 
     public function deleteComment(int $commentId): void
@@ -556,10 +496,7 @@ class CommentPanel extends Component implements HasActions, HasForms
 
         if (! $comment instanceof Model || ! CommentAuthor::canDelete($comment)) {
             if ($comment instanceof Model && $comment->hasReplies()) {
-                Notification::make()
-                    ->title(__('Delete replies before removing this comment.'))
-                    ->warning()
-                    ->send();
+                $this->toast(heading: __('Delete replies before removing this comment.'), variant: 'warning');
             }
 
             return;
@@ -594,10 +531,7 @@ class CommentPanel extends Component implements HasActions, HasForms
             $this->cancelReply();
         }
 
-        Notification::make()
-            ->title(__('Comment deleted.'))
-            ->success()
-            ->send();
+        $this->toast(heading: __('Comment deleted.'));
     }
 
     public function renderCommentBody(Model $comment): string
@@ -618,15 +552,63 @@ class CommentPanel extends Component implements HasActions, HasForms
         return $this->allowMentions && ! $this->usesRichEditor();
     }
 
-    protected function configureMentions(RichEditor|Textarea $editor): RichEditor|Textarea
+    public function usesEditorMentionAutocomplete(): bool
     {
-        if (! $this->allowMentions || ! $editor instanceof RichEditor) {
-            return $editor;
-        }
+        return $this->allowMentions && $this->usesRichEditor();
+    }
 
-        return $editor->mentions([
-            CommentMentionProvider::make(),
-        ]);
+    public function editorToolbar(): string
+    {
+        return CommentComposerField::fluxToolbar();
+    }
+
+    public function textareaRows(): int
+    {
+        return CommentComposerField::textareaRows(layout: $this->layout, compactProfile: $this->uiCompactProfileContext());
+    }
+
+    public function composerPlaceholder(string $composer): string
+    {
+        return match ($composer) {
+            'reply' => $this->replyComposerPlaceholder(),
+            'edit' => '',
+            default => $this->rootComposerPlaceholder(),
+        };
+    }
+
+    public function attachmentsEnabled(string $composer): bool
+    {
+        return CommentAttachments::enabled(context: $this->attachmentContext(composer: $composer));
+    }
+
+    /**
+     * Comma-separated `accept` value for the composer file input.
+     */
+    public function attachmentAccept(): string
+    {
+        return implode(',', CommentAttachments::acceptedFileTypes());
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function existingAttachmentLabels(): array
+    {
+        return array_map(
+            fn (string $html): string => CommentBodyAttachments::label(attachmentHtml: $html),
+            $this->editExistingAttachments,
+        );
+    }
+
+    /**
+     * @return array<int, UploadedFile>
+     */
+    public function queuedAttachments(string $composer): array
+    {
+        return array_filter(
+            $this->{$this->attachmentProperty(composer: $composer)},
+            fn (mixed $file): bool => $file instanceof UploadedFile,
+        );
     }
 
     public function render(): View
@@ -635,18 +617,134 @@ class CommentPanel extends Component implements HasActions, HasForms
     }
 
     /**
-     * Skeleton shown while a `lazy` panel loads. Host apps embed the panel inside
-     * large detail views (order workspaces, customer tabs); deferring it keeps
-     * the thread and rich-text composer out of the parent's render.
-     *
-     * @param  array<string, mixed>  $params
+     * User feedback after an action. Dispatches a Flux toast (`<flux:toast />` must be on
+     * the page); override to route feedback elsewhere.
      */
-    public function placeholder(array $params = []): View
+    protected function toast(string $heading, string $variant = 'success'): void
     {
-        return view('filament-comments::comment-panel-placeholder', [
-            'heading' => $params['heading'] ?? $this->heading,
-            'showHeading' => $params['showHeading'] ?? $this->showHeading,
-        ]);
+        $this->dispatch('toast-show', duration: 5000, slots: ['heading' => $heading], dataset: ['variant' => $variant]);
+    }
+
+    protected function attachmentContext(string $composer): CommentAttachmentContext
+    {
+        $comment = null;
+
+        if ($composer === 'edit' && $this->editingCommentId !== null) {
+            $comment = $this->findScopedComment($this->editingCommentId);
+        }
+
+        return new CommentAttachmentContext(
+            commentable: $this->record,
+            comment: $comment instanceof Model ? $comment : null,
+            group: $this->group,
+            topic: $this->topic,
+            composer: $composer,
+        );
+    }
+
+    protected function formProperty(string $composer): string
+    {
+        return match ($composer) {
+            'reply' => 'replyFormData',
+            'edit' => 'editFormData',
+            default => 'commentFormData',
+        };
+    }
+
+    protected function attachmentProperty(string $composer): string
+    {
+        return match ($composer) {
+            'reply' => 'replyAttachments',
+            'edit' => 'editAttachments',
+            default => 'commentAttachments',
+        };
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    protected function composerRules(string $composer): array
+    {
+        $attachments = $this->attachmentProperty(composer: $composer);
+
+        return [
+            $this->formProperty(composer: $composer).'.body' => ['nullable', 'string', 'max:'.static::MAX_BODY_LENGTH],
+            $attachments => ['array', 'max:'.static::MAX_ATTACHMENTS],
+            $attachments.'.*' => CommentAttachments::fileRules(),
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected function composerValidationAttributes(string $composer): array
+    {
+        $attachments = $this->attachmentProperty(composer: $composer);
+
+        return [
+            $this->formProperty(composer: $composer).'.body' => __('comment'),
+            $attachments => __('attachments'),
+            $attachments.'.*' => __('attachment'),
+        ];
+    }
+
+    protected function hasQueuedAttachments(string $composer): bool
+    {
+        return $this->queuedAttachments(composer: $composer) !== []
+            && $this->attachmentsEnabled(composer: $composer);
+    }
+
+    /**
+     * Store the composer's queued uploads and append their markup to the body.
+     */
+    protected function appendQueuedAttachments(string $body, string $composer, CommentAttachmentContext $context): string
+    {
+        $files = $this->queuedAttachments(composer: $composer);
+
+        if ($files === [] || ! CommentAttachments::enabled(context: $context)) {
+            return $body;
+        }
+
+        $markup = array_map(
+            fn (UploadedFile $file): string => CommentAttachments::storeAsHtml(file: $file, context: $context),
+            array_values($files),
+        );
+
+        $this->{$this->attachmentProperty(composer: $composer)} = [];
+
+        return $this->normalizeBody(CommentBodyAttachments::append(body: $body, attachments: $markup));
+    }
+
+    protected function persistUpdatedComment(
+        Model $comment,
+        string $body,
+        CommentAttachmentContext $context,
+        array $metadata = [],
+    ): void {
+        $comment->update(
+            $this->commentAttributes(body: $body, parentId: $comment->parent_id, isEdit: true),
+        );
+
+        $comment = $comment->fresh();
+
+        $this->afterCommentSaved(
+            comment: $comment,
+            context: $context,
+        );
+
+        CommentLifecycle::afterUpdate(new CommentLifecycleEvent(
+            commentable: $this->record,
+            body: $body,
+            context: $context,
+            comment: $comment,
+            parentId: $comment->parent_id,
+            metadata: $metadata,
+        ));
+
+        $this->cancelEdit();
+        unset($this->comments);
+
+        $this->toast(heading: __('Comment updated.'));
     }
 
     protected function applyScopeFilters(Builder|Relation $query): void
@@ -690,22 +788,13 @@ class CommentPanel extends Component implements HasActions, HasForms
         return array_values($groups);
     }
 
-    protected function normalizeBody(array|string|null $body): string
+    protected function normalizeBody(mixed $body): string
     {
-        if (is_array($body)) {
-            $renderer = RichContentRenderer::make($body);
-
-            $renderer = CommentAttachments::configureRichContentRenderer(
-                renderer: $renderer,
-                context: $this->attachmentContext(composer: 'root'),
-            );
-
-            return trim(CommentAttachmentHtmlTransformer::transform(
-                html: $renderer->toHtml(),
-            ));
+        if (! is_string($body)) {
+            return '';
         }
 
-        return trim(CommentAttachmentHtmlTransformer::transform(html: (string) $body));
+        return trim(CommentAttachmentHtmlTransformer::transform(html: $body));
     }
 
     protected function isValidBody(string $body): bool
@@ -795,7 +884,7 @@ class CommentPanel extends Component implements HasActions, HasForms
         }
     }
 
-    protected function createComment(array|string|null $rawBody, ?int $parentId): ?Model
+    protected function createComment(mixed $rawBody, ?int $parentId): ?Model
     {
         if (! CommentAuthorization::canCreate()) {
             return null;
@@ -811,26 +900,27 @@ class CommentPanel extends Component implements HasActions, HasForms
             $parent = $this->findScopedComment($parentId);
 
             if (! $parent instanceof Model || ! CommentAuthor::canReply($parent)) {
-                Notification::make()
-                    ->title(__('Unable to reply to that comment.'))
-                    ->warning()
-                    ->send();
+                $this->toast(heading: __('Unable to reply to that comment.'), variant: 'warning');
 
                 return null;
             }
         }
 
-        $body = $this->normalizeBody($rawBody);
         $composer = $parentId === null ? 'root' : 'reply';
+
+        $this->validate($this->composerRules(composer: $composer), attributes: $this->composerValidationAttributes(composer: $composer));
+
+        $body = $this->normalizeBody($rawBody);
         $body = $this->applyAiProofread(body: $body, composer: $composer);
 
-        if (! $this->isValidBody($body)) {
-            $this->notifyInvalidBody();
+        if (! $this->isValidBody($body) && ! $this->hasQueuedAttachments(composer: $composer)) {
+            $this->notifyInvalidBody(composer: $composer);
 
             return null;
         }
 
         $context = $this->attachmentContext(composer: $composer);
+        $body = $this->appendQueuedAttachments(body: $body, composer: $composer, context: $context);
 
         $beforeResult = CommentLifecycle::beforeCreate(new CommentLifecycleEvent(
             commentable: $this->record,
@@ -905,10 +995,7 @@ class CommentPanel extends Component implements HasActions, HasForms
             $this->cancelReply();
         }
 
-        Notification::make()
-            ->title($composer === 'reply' ? __('Reply added.') : __('Comment added.'))
-            ->success()
-            ->send();
+        $this->toast(heading: $composer === 'reply' ? __('Reply added.') : __('Comment added.'));
     }
 
     /**
@@ -925,7 +1012,7 @@ class CommentPanel extends Component implements HasActions, HasForms
 
         $comment = $this->findScopedComment($commentId);
 
-        if (! $comment instanceof Model) {
+        if (! $comment instanceof Model || ! CommentAuthor::canEdit($comment)) {
             return;
         }
 
@@ -984,23 +1071,23 @@ class CommentPanel extends Component implements HasActions, HasForms
 
     protected function notifySaveRecordFirst(): void
     {
-        Notification::make()
-            ->title(__('Save this record before adding comments.'))
-            ->warning()
-            ->send();
+        $this->toast(heading: __('Save this record before adding comments.'), variant: 'warning');
     }
 
-    protected function notifyInvalidBody(): void
+    protected function notifyInvalidBody(string $composer = 'root'): void
     {
-        Notification::make()
-            ->title(__('Comment must be at least 2 characters.'))
-            ->warning()
-            ->send();
+        $message = __('Comment must be at least 2 characters.');
+
+        $this->addError($this->formProperty(composer: $composer).'.body', $message);
+
+        $this->toast(heading: $message, variant: 'warning');
     }
 
     protected function resetRootComposer(): void
     {
-        $this->form->fill(['body' => null]);
+        $this->commentFormData = ['body' => null];
+        $this->commentAttachments = [];
+        $this->resetValidation(['commentFormData.body', 'commentAttachments', 'commentAttachments.*']);
     }
 
     protected function findScopedComment(int $commentId): ?Model

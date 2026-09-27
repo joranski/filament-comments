@@ -4,13 +4,7 @@
     x-data
     x-init="$nextTick(() => $el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }))"
 >
-    @if ($this->usesTextareaMentionAutocomplete())
-        <x-filament-comments::mention-autocomplete state-path="replyFormData.body">
-            {{ $this->replyForm }}
-        </x-filament-comments::mention-autocomplete>
-    @else
-        {{ $this->replyForm }}
-    @endif
+    @include('filament-comments::partials.composer', ['composer' => 'reply'])
 
     <div class="flex items-center gap-2">
         <flux:button
@@ -19,7 +13,7 @@
             size="sm"
             wire:click="submitReply"
             wire:loading.attr="disabled"
-            wire:target="submitReply"
+            wire:target="submitReply,replyAttachments"
         >
             <span wire:loading.remove wire:target="submitReply">{{ __('Add reply') }}</span>
             <span wire:loading wire:target="submitReply">{{ __('Adding…') }}</span>

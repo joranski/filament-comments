@@ -34,13 +34,7 @@
             'gap-3' => ! $condensed,
             'gap-2' => $condensed,
         ])>
-            @if ($this->usesTextareaMentionAutocomplete())
-                <x-filament-comments::mention-autocomplete state-path="commentFormData.body">
-                    {{ $this->form }}
-                </x-filament-comments::mention-autocomplete>
-            @else
-                {{ $this->form }}
-            @endif
+            @include('filament-comments::partials.composer', ['composer' => 'root'])
 
             @if ($this->showsProofreadToggle())
                 <flux:field variant="inline">
@@ -56,6 +50,7 @@
                     :size="$condensed ? 'sm' : 'base'"
                     wire:click="addComment"
                     wire:loading.attr="disabled"
+                    wire:target="addComment,commentAttachments"
                 >
                     <span wire:loading.remove wire:target="addComment">{{ __($addButtonLabel) }}</span>
                     <span wire:loading wire:target="addComment">{{ __('Adding…') }}</span>
@@ -129,6 +124,4 @@
             @endteleport
         @endif
     @endif
-
-    <x-filament-actions::modals />
 </div>

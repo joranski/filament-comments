@@ -20,13 +20,15 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Comment attachments (RichEditor file uploads)
+    | Comment attachments (composer file uploads)
     |--------------------------------------------------------------------------
     |
     | Enable features.attachments, then choose a handler class that implements
-    | CommentAttachmentHandler. The default handler stores files on a Laravel disk.
-    | Host apps can bind a custom handler (e.g. Spatie Media Library on the
-    | commentable model) via attachments.handler.
+    | CommentAttachmentHandler. Composers upload files through Livewire; the
+    | handler stores them and the returned URL is embedded in the comment body.
+    | The default handler stores files on a Laravel disk (`disk`, falling back to
+    | filesystems.default). Host apps can bind a custom handler (e.g. Spatie Media
+    | Library on the commentable model) via attachments.handler.
     |
     */
     'attachments' => [
@@ -38,12 +40,14 @@ return [
         'max_size_kb' => null,
         /*
          | When null, images, PDFs, Word/Excel/PowerPoint, CSV, and plain text are accepted.
-         | Set to an empty array to allow all file types supported by Filament RichEditor.
+         | Set to an empty array to allow any file type.
          */
         'accepted_file_types' => null,
+        /*
+         | Read by custom handlers that deduplicate stored files (the default handler ignores it).
+         */
         'deduplicate' => false,
         /*
-         | Filament RichEditor attachFiles uses Livewire temporary preview URLs.
          | When true, document extensions required for PDF/Office uploads are merged
          | into livewire.temporary_file_upload.preview_mimes at boot.
          */
@@ -55,11 +59,12 @@ return [
     | Rich editor toolbar
     |--------------------------------------------------------------------------
     |
-    | Configure toolbar button groups for comment composers. When attachments are
-    | enabled, attachFiles is appended automatically unless already present or
+    | Toolbar button groups for comment composers (TipTap-style names: bold,
+    | italic, underline, strike, link, blockquote, codeBlock, bulletList,
+    | orderedList, undo, redo, ...). The Flux composer maps them to flux:editor
+    | toolbar items. For host-app rich editors, attachFiles is appended when
+    | attachments are enabled unless already present or
     | append_attach_files_when_enabled is false.
-    |
-    | @see https://filamentphp.com/docs/forms/rich-editor#customizing-the-toolbar-buttons
     |
     */
     'rich_editor' => [
@@ -87,7 +92,7 @@ return [
             // App\Support\Comments\PromptDocumentEmailHook::class,
         ],
         'defer_prompts' => [
-            // 'document-email' => 'filament.resources.service-orders.prompts.document-email',
+            // 'document-email' => 'comments.prompts.document-email',
         ],
     ],
 
@@ -153,7 +158,7 @@ return [
     |   policy   — always require policy checks (deny when no policy)
     |   fallback — ignore policies; use fallback rules only
     |
-    | With Filament Shield, register CommentPolicy (see stubs) and keep mode "auto".
+    | With Shield-style permissions (e.g. View:Comment), register CommentPolicy (see stubs) and keep mode "auto".
     | Without Shield, either publish the standalone policy stub or rely on fallback.
     |
     */
@@ -172,6 +177,17 @@ return [
     ],
 
     'commentable_urls' => [],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Notifications
+    |--------------------------------------------------------------------------
+    | Mention / reply notifications go through the SendsCommentNotifications
+    | contract (default: a Laravel database notification).
+    */
+    'notifications' => [
+        'notify_self_mentions' => false,
+    ],
 
     'tables' => [
         'settings' => 'filament_comments_settings',
@@ -205,8 +221,11 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Package settings export (master Package Settings page via filament-emails)
+    | Package settings
     |--------------------------------------------------------------------------
+    | `roles` are role names (checked with hasAnyRole(), e.g. spatie/laravel-permission)
+    | allowed to manage the settings; empty = anyone who may view comments.
+    | See Support\CommentSettingsAuthorization.
     */
     'settings' => [
         'export' => [

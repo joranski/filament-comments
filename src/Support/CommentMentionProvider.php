@@ -4,22 +4,11 @@ declare(strict_types=1);
 
 namespace Joranski\FilamentComments\Support;
 
-use Filament\Forms\Components\RichEditor\MentionProvider;
-
+/**
+ * Mentionable-user lookups backing the composer `@` autocomplete.
+ */
 final class CommentMentionProvider
 {
-    public static function make(): MentionProvider
-    {
-        return MentionProvider::make('@')
-            ->items(fn (): array => self::search(search: ''))
-            ->getSearchResultsUsing(fn (string $search): array => self::search(search: $search))
-            ->getLabelsUsing(fn (array $ids): array => self::labelsFor(ids: $ids))
-            ->searchPrompt(__('Mention someone…'))
-            ->searchingMessage(__('Searching users…'))
-            ->noSearchResultsMessage(__('No users found.'))
-            ->noItemsMessage(__('No users available.'));
-    }
-
     /**
      * @return array<string, string>
      */

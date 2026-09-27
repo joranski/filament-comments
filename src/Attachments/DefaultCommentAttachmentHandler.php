@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace Joranski\FilamentComments\Attachments;
 
-use Filament\Forms\Components\RichEditor;
-use Filament\Forms\Components\RichEditor\RichContentRenderer;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Joranski\FilamentComments\Contracts\CommentAttachmentHandler;
 use Joranski\FilamentComments\Support\CommentAttachmentContext;
-use Joranski\FilamentComments\Support\CommentAttachmentDefaults;
-use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
+/**
+ * Stores attachments on a filesystem disk (`filament-comments.attachments.disk`,
+ * falling back to `filesystems.default`) and embeds their public URL.
+ */
 final class DefaultCommentAttachmentHandler implements CommentAttachmentHandler
 {
     public function isEnabled(CommentAttachmentContext $context): bool
@@ -21,72 +21,10 @@ final class DefaultCommentAttachmentHandler implements CommentAttachmentHandler
         return (bool) config('filament-comments.attachments.enabled', true);
     }
 
-    public function configureRichEditor(RichEditor $editor, CommentAttachmentContext $context): RichEditor
+    public function store(UploadedFile $file, CommentAttachmentContext $context): string
     {
-        $editor = $editor
-            ->fileAttachmentsDisk(fn (): ?string => $this->diskName())
-            ->fileAttachmentsDirectory(fn (): ?string => $this->directory(context: $context))
-            ->fileAttachmentsVisibility(fn (): ?string => $this->visibility())
-            ->saveUploadedFileAttachmentUsing(
-                fn (TemporaryUploadedFile|UploadedFile $file): string => $this->storeUploadedFile(
-                    file: $file,
-                    context: $context,
-                ),
-            )
-            ->getFileAttachmentUrlUsing(
-                fn (string $file): string => $this->urlForStoredFile(path: $file),
-            );
-
-        $acceptedTypes = config('filament-comments.attachments.accepted_file_types');
-
-        if ($acceptedTypes === null) {
-            $acceptedTypes = CommentAttachmentDefaults::acceptedFileTypes();
-        }
-
-        if (is_array($acceptedTypes) && $acceptedTypes !== []) {
-            $editor->fileAttachmentsAcceptedFileTypes($acceptedTypes);
-        }
-
-        $maxSize = config('filament-comments.attachments.max_size_kb');
-
-        if (is_numeric($maxSize)) {
-            $editor->fileAttachmentsMaxSize((int) $maxSize);
-        }
-
-        if (
-            (bool) config('filament-comments.attachments.deduplicate', false)
-            && RichEditor::hasMacro('deduplicateAttachments')
-        ) {
-            $editor->deduplicateAttachments();
-        }
-
-        return $editor;
-    }
-
-    public function configureRichContentRenderer(
-        RichContentRenderer $renderer,
-        CommentAttachmentContext $context,
-    ): RichContentRenderer {
-        $disk = $this->diskName();
-
-        if ($disk !== null) {
-            $renderer->fileAttachmentsDisk($disk);
-        }
-
-        return $renderer;
-    }
-
-    public function afterCommentSaved(Model $comment, CommentAttachmentContext $context): void {}
-
-    public function beforeCommentDeleted(Model $comment): void {}
-
-    protected function storeUploadedFile(
-        TemporaryUploadedFile|UploadedFile $file,
-        CommentAttachmentContext $context,
-    ): string {
         $diskName = $this->diskName();
-        $directory = $this->directory(context: $context);
-        $path = $file->store($directory, ['disk' => $diskName]);
+        $path = (string) $file->store($this->directory(context: $context) ?? '', ['disk' => $diskName]);
 
         if ($this->visibility() === 'public') {
             rescue(
@@ -98,20 +36,24 @@ final class DefaultCommentAttachmentHandler implements CommentAttachmentHandler
         return $path;
     }
 
-    protected function urlForStoredFile(string $path): string
+    public function url(string $reference, CommentAttachmentContext $context): ?string
     {
-        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
-            return $path;
+        if (str_starts_with($reference, 'http://') || str_starts_with($reference, 'https://')) {
+            return $reference;
         }
 
-        return Storage::disk($this->diskName())->url($path);
+        return Storage::disk($this->diskName())->url($reference);
     }
 
-    protected function diskName(): ?string
+    public function afterCommentSaved(Model $comment, CommentAttachmentContext $context): void {}
+
+    public function beforeCommentDeleted(Model $comment): void {}
+
+    protected function diskName(): string
     {
         $disk = config('filament-comments.attachments.disk');
 
-        return filled($disk) ? (string) $disk : config('filament.default_filesystem_disk');
+        return filled($disk) ? (string) $disk : (string) config('filesystems.default');
     }
 
     protected function directory(CommentAttachmentContext $context): ?string

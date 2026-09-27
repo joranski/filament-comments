@@ -9,28 +9,34 @@ use Joranski\FilamentComments\Models\FilamentCommentsSetting;
 
 /**
  * Reads and persists package-level comment settings (UI density, AI toggles).
+ *
+ * Only the settings row id is cached, so the cache store never has to unserialize an
+ * Eloquent model (stores with `serializable_classes => false` reject objects). The row
+ * itself is memoised per instance; the service is a singleton, so that is per request.
  */
 class FilamentCommentsSettings
 {
-    private const CACHE_KEY = 'filament-comments.settings';
+    private const CACHE_KEY = 'filament-comments.settings-id';
+
+    private ?FilamentCommentsSetting $resolved = null;
 
     public function current(): FilamentCommentsSetting
     {
-        return Cache::rememberForever(self::CACHE_KEY, function (): FilamentCommentsSetting {
-            $existing = FilamentCommentsSetting::query()->first();
+        if ($this->resolved !== null) {
+            return $this->resolved;
+        }
 
-            if ($existing !== null) {
-                return $existing;
-            }
+        $cachedId = Cache::get(self::CACHE_KEY);
 
-            return FilamentCommentsSetting::query()->create([
-                'compact_toolbar' => (bool) config('filament-comments.ui.compact_toolbar', false),
-                'compact_action_icons' => (bool) config('filament-comments.ui.compact_action_icons', false),
-                'ai_proofread_enabled' => (bool) config('filament-comments.ai.proofread_enabled', false),
-                'ai_proofread_default' => (bool) config('filament-comments.ai.proofread_default', true),
-                'ai_summarize_threads' => (bool) config('filament-comments.ai.summarize_threads', false),
-            ]);
-        });
+        $settings = is_numeric($cachedId)
+            ? FilamentCommentsSetting::query()->find((int) $cachedId)
+            : null;
+
+        $settings ??= FilamentCommentsSetting::query()->first() ?? $this->createDefaults();
+
+        Cache::forever(self::CACHE_KEY, $settings->getKey());
+
+        return $this->resolved = $settings;
     }
 
     public function compactToolbar(): bool
@@ -81,13 +87,24 @@ class FilamentCommentsSettings
             'ai_summarize_threads' => (bool) ($data['ai_summarize_threads'] ?? false),
         ])->save();
 
-        Cache::forget(self::CACHE_KEY);
-
         return $settings->refresh();
     }
 
     public function flushCache(): void
     {
         Cache::forget(self::CACHE_KEY);
+
+        $this->resolved = null;
+    }
+
+    private function createDefaults(): FilamentCommentsSetting
+    {
+        return FilamentCommentsSetting::query()->create([
+            'compact_toolbar' => (bool) config('filament-comments.ui.compact_toolbar', false),
+            'compact_action_icons' => (bool) config('filament-comments.ui.compact_action_icons', false),
+            'ai_proofread_enabled' => (bool) config('filament-comments.ai.proofread_enabled', false),
+            'ai_proofread_default' => (bool) config('filament-comments.ai.proofread_default', true),
+            'ai_summarize_threads' => (bool) config('filament-comments.ai.summarize_threads', false),
+        ]);
     }
 }

@@ -99,6 +99,10 @@ HTML;
 
     protected static function resolveLabel(string $src, string $alt): string
     {
+        if (static::extensionFrom(value: $alt) !== null) {
+            return $alt;
+        }
+
         $path = parse_url($src, PHP_URL_PATH);
 
         if (is_string($path) && $path !== '') {

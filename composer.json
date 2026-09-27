@@ -1,12 +1,12 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
     "name": "joranski/filament-comments",
-    "version": "0.5.0",
-    "description": "Filament Livewire comment panels with mentions, pins, replies, and audit-grade threading",
+    "version": "0.6.0",
+    "description": "Livewire + Flux comment panels with mentions, pins, replies, attachments, and audit-grade threading",
     "keywords": [
         "laravel",
-        "filament",
         "livewire",
+        "flux",
         "comments",
         "collaboration"
     ],
@@ -14,11 +14,12 @@
     "type": "library",
     "require": {
         "php": "^8.3",
-        "filament/filament": "^4.0|^5.0",
         "illuminate/contracts": "^12.0 || ^13.0",
         "illuminate/database": "^12.0 || ^13.0",
+        "illuminate/notifications": "^12.0 || ^13.0",
         "illuminate/support": "^12.0 || ^13.0",
-        "joranski/filament-emails": "@dev",
+        "livewire/flux": "^2.0",
+        "livewire/flux-pro": "^2.1",
         "livewire/livewire": "^4.0",
         "spatie/laravel-package-tools": "^1.16"
     },
@@ -30,8 +31,6 @@
         }
     ],
     "require-dev": {
-        "livewire/flux": "^2.0",
-        "livewire/flux-pro": "^2.1",
         "orchestra/testbench": "^10.0 || ^11.0",
         "pestphp/pest": "^4.0",
         "pestphp/pest-plugin-laravel": "^4.0",

@@ -7,7 +7,7 @@ namespace Joranski\FilamentComments\Support;
 final class CommentAttachmentDefaults
 {
     /**
-     * Default MIME types accepted by RichEditor file attachments when
+     * Default MIME types accepted by composer file attachments when
      * filament-comments.attachments.accepted_file_types is null.
      *
      * @return list<string>
@@ -32,8 +32,8 @@ final class CommentAttachmentDefaults
     }
 
     /**
-     * File extensions Livewire must allow for temporary preview URLs when using
-     * Filament RichEditor attachFiles (AttachFilesAction calls temporaryUrl()).
+     * File extensions Livewire must allow for temporary preview URLs of
+     * attachments queued in a composer (and by host rich editors).
      *
      * @return list<string>
      */
@@ -56,7 +56,7 @@ final class CommentAttachmentDefaults
     }
 
     /**
-     * Default RichEditor toolbar button groups.
+     * Default rich editor toolbar button groups.
      *
      * @return list<list<string>>
      */

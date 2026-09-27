@@ -9,11 +9,11 @@ namespace Joranski\FilamentComments;
 use Joranski\FilamentComments\Ai\NullCommentAiAssistant;
 use Joranski\FilamentComments\Comments\Livewire\CommentPanel;
 use Joranski\FilamentComments\Contracts\CommentAiAssistant;
-use Joranski\FilamentComments\Filament\Settings\CommentsSettingsPanel;
+use Joranski\FilamentComments\Contracts\SendsCommentNotifications;
+use Joranski\FilamentComments\Notifications\DatabaseCommentNotificationSender;
 use Joranski\FilamentComments\Services\CommentAiProcessor;
 use Joranski\FilamentComments\Services\FilamentCommentsSettings;
 use Joranski\FilamentComments\Support\CommentAttachmentDefaults;
-use Joranski\FilamentEmails\Support\FilamentPackageSettingsRegistry;
 use Livewire\Livewire;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
@@ -32,6 +32,7 @@ class FilamentCommentsServiceProvider extends PackageServiceProvider
     {
         $this->app->singleton(FilamentCommentsSettings::class);
         $this->app->singleton(CommentAiProcessor::class);
+        $this->app->bindIf(SendsCommentNotifications::class, DatabaseCommentNotificationSender::class);
 
         $this->app->bind(CommentAiAssistant::class, function ($app): CommentAiAssistant {
             $class = config('filament-comments.ai.assistant', NullCommentAiAssistant::class);
@@ -51,12 +52,6 @@ class FilamentCommentsServiceProvider extends PackageServiceProvider
         Livewire::component('filament-comments.comment-panel', CommentPanel::class);
 
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
-
-        $this->app->booted(function (): void {
-            if (class_exists(FilamentPackageSettingsRegistry::class)) {
-                app(FilamentPackageSettingsRegistry::class)->register(CommentsSettingsPanel::class);
-            }
-        });
 
         if ($this->app->runningInConsole()) {
             $this->publishes([

@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Joranski\FilamentComments\Attachments;
 
-use Filament\Forms\Components\RichEditor;
-use Filament\Forms\Components\RichEditor\RichContentRenderer;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\UploadedFile;
 use Joranski\FilamentComments\Contracts\CommentAttachmentHandler;
 use Joranski\FilamentComments\Support\CommentAttachmentContext;
+use LogicException;
 
 final class NullCommentAttachmentHandler implements CommentAttachmentHandler
 {
@@ -17,16 +17,14 @@ final class NullCommentAttachmentHandler implements CommentAttachmentHandler
         return false;
     }
 
-    public function configureRichEditor(RichEditor $editor, CommentAttachmentContext $context): RichEditor
+    public function store(UploadedFile $file, CommentAttachmentContext $context): string
     {
-        return $editor;
+        throw new LogicException('Comment attachments are disabled.');
     }
 
-    public function configureRichContentRenderer(
-        RichContentRenderer $renderer,
-        CommentAttachmentContext $context,
-    ): RichContentRenderer {
-        return $renderer;
+    public function url(string $reference, CommentAttachmentContext $context): ?string
+    {
+        return $reference;
     }
 
     public function afterCommentSaved(Model $comment, CommentAttachmentContext $context): void {}

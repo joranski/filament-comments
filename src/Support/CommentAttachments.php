@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 namespace Joranski\FilamentComments\Support;
 
-use Filament\Forms\Components\RichEditor;
-use Filament\Forms\Components\RichEditor\RichContentRenderer;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\UploadedFile;
 use Joranski\FilamentComments\Attachments\DefaultCommentAttachmentHandler;
 use Joranski\FilamentComments\Attachments\NullCommentAttachmentHandler;
 use Joranski\FilamentComments\Contracts\CommentAttachmentHandler;
@@ -38,38 +37,76 @@ final class CommentAttachments
             return true;
         }
 
-        return static::handler()->isEnabled(context: $context);
+        return self::handler()->isEnabled(context: $context);
     }
 
-    public static function configureRichEditor(
-        RichEditor $editor,
-        CommentAttachmentContext $context,
-    ): RichEditor {
-        if (! static::enabled(context: $context)) {
-            return $editor;
+    /**
+     * @return list<string>
+     */
+    public static function acceptedFileTypes(): array
+    {
+        $configured = config('filament-comments.attachments.accepted_file_types');
+
+        if (! is_array($configured)) {
+            return CommentAttachmentDefaults::acceptedFileTypes();
         }
 
-        return static::handler()->configureRichEditor(editor: $editor, context: $context);
+        return array_values(array_map(strval(...), $configured));
     }
 
-    public static function configureRichContentRenderer(
-        RichContentRenderer $renderer,
-        CommentAttachmentContext $context,
-    ): RichContentRenderer {
-        if (! static::enabled(context: $context)) {
-            return $renderer;
+    public static function maxSizeKb(): ?int
+    {
+        $maxSize = config('filament-comments.attachments.max_size_kb');
+
+        return is_numeric($maxSize) ? (int) $maxSize : null;
+    }
+
+    /**
+     * Validation rules for one uploaded composer attachment.
+     *
+     * @return list<string>
+     */
+    public static function fileRules(): array
+    {
+        $rules = ['file'];
+
+        $types = self::acceptedFileTypes();
+
+        if ($types !== []) {
+            $rules[] = 'mimetypes:'.implode(',', $types);
         }
 
-        return static::handler()->configureRichContentRenderer(renderer: $renderer, context: $context);
+        $maxSize = self::maxSizeKb();
+
+        if ($maxSize !== null) {
+            $rules[] = 'max:'.$maxSize;
+        }
+
+        return $rules;
+    }
+
+    /**
+     * Store an uploaded file through the configured handler and return the
+     * embeddable body markup for it.
+     */
+    public static function storeAsHtml(UploadedFile $file, CommentAttachmentContext $context): string
+    {
+        $handler = self::handler();
+        $reference = $handler->store(file: $file, context: $context);
+
+        return CommentBodyAttachments::html(
+            url: $handler->url(reference: $reference, context: $context) ?? $reference,
+            name: $file->getClientOriginalName(),
+        );
     }
 
     public static function afterCommentSaved(Model $comment, CommentAttachmentContext $context): void
     {
-        if (! static::enabled(context: $context)) {
+        if (! self::enabled(context: $context)) {
             return;
         }
 
-        static::handler()->afterCommentSaved(comment: $comment, context: $context);
+        self::handler()->afterCommentSaved(comment: $comment, context: $context);
     }
 
     public static function beforeCommentDeleted(Model $comment): void
@@ -78,6 +115,6 @@ final class CommentAttachments
             return;
         }
 
-        static::handler()->beforeCommentDeleted(comment: $comment);
+        self::handler()->beforeCommentDeleted(comment: $comment);
     }
 }

@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace Joranski\FilamentComments\Support;
 
-use Filament\Forms\Components\RichEditor;
 use Joranski\FilamentComments\Services\FilamentCommentsSettings;
 
 /**
- * UI density helpers for RichEditor toolbars, thread action buttons, and condensed panels.
+ * UI density helpers for composer toolbars, thread action buttons, and condensed panels.
  *
  * Pass `$compactProfile = true` to force a per-panel condensed profile (via {@see CommentPanel::compact()}).
  * When omitted, global Package Settings / config toggles apply.
@@ -88,16 +87,5 @@ final class CommentUi
         }
 
         return $classes;
-    }
-
-    public static function configureRichEditor(RichEditor $editor, ?bool $compactProfile = null): RichEditor
-    {
-        if (! self::compactToolbar($compactProfile)) {
-            return $editor;
-        }
-
-        return $editor->extraAttributes([
-            'class' => 'fi-comments-compact-rich-editor',
-        ]);
     }
 }

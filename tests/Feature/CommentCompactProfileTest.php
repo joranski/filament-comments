@@ -3,8 +3,6 @@
 declare(strict_types=1);
 
 use Joranski\FilamentComments\Comments\Livewire\CommentPanel;
-use Joranski\FilamentComments\Filament\Schemas\CommentPanelSchema;
-use Joranski\FilamentComments\Filament\Widgets\CommentsWidget;
 use Joranski\FilamentComments\Support\CommentUi;
 
 test('comment panel accepts compactProfile mount parameter', function (): void {
@@ -14,7 +12,8 @@ test('comment panel accepts compactProfile mount parameter', function (): void {
     $panel->mount(record: $commentable, compactProfile: true);
 
     expect($panel->compactProfile)->toBeTrue()
-        ->and($panel->usesCompactProfile())->toBeTrue();
+        ->and($panel->usesCompactProfile())->toBeTrue()
+        ->and($panel->usesRichEditor())->toBeTrue();
 });
 
 test('comment panel compact method toggles condensed profile', function (): void {
@@ -28,21 +27,16 @@ test('comment panel compact method toggles condensed profile', function (): void
         ->toContain('fi-comments-ui-condensed');
 });
 
-test('comments widget compact method enables condensed profile', function (): void {
-    $widget = new CommentsWidget;
-    $widget->compact();
+test('compact profile comment panel exposes mention search and label lookup', function (): void {
+    $current = \User::factory()->create(['name' => 'Current User']);
+    $other = \User::factory()->create(['name' => 'Jordan Analyst']);
 
-    expect($widget->compactProfile)->toBeTrue();
-});
+    $this->actingAs($current);
 
-test('comments widget make accepts compactProfile property', function (): void {
-    $configuration = CommentsWidget::make(['compactProfile' => true]);
+    $panel = app(CommentPanel::class);
+    $panel->mount(record: \TestCommentable::factory()->create(), compactProfile: true);
 
-    expect($configuration)->toBeInstanceOf(\Filament\Widgets\WidgetConfiguration::class);
-});
-
-test('comment panel schema passes compact profile to embedded livewire data', function (): void {
-    $config = CommentPanelSchema::widgetConfiguration(compact: true);
-
-    expect($config)->toHaveKey('compactProfile', true);
+    expect($panel->searchMentionUsers(query: 'Jord'))->toBe([['id' => $other->id, 'name' => 'Jordan Analyst']])
+        ->and($panel->getCommentMentionLabelsForJs(mentions: [['id' => $other->id, 'char' => '@']]))
+        ->toBe([(string) $other->id => 'Jordan Analyst']);
 });
